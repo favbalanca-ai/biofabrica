@@ -21,6 +21,7 @@ const TAB = {
   INOC:    'Inoculos',
   MEIO:    'Meios',
   ORG:     'Organismos',
+  PROD:    'Produtos',
   ACOES:   'Acoes',
   MED:     'Medicoes',
 };
@@ -58,14 +59,18 @@ const COLS = {
     'criadoPor', 'criadoEm', 'atualizadoEm',
     // Seleções de catálogo (inóculo e meio de cultura usados na produção)
     'inoculo', 'meio', 'tempoProducaoH',
+    // Volume de fabricação (para dosear insumos) e lote do inóculo usado
+    'volumeFab', 'loteInoculo',
   ],
   [TAB.VISITAS]: ['id', 'loteId', 'funcionario', 'objetivo', 'dtEntrada', 'dtSaida'],
   [TAB.AJUSTES]: ['id', 'loteId', 'tipo', 'dt', 'valor', 'operador', 'produto', 'obs'],
   [TAB.FUNC]: ['id', 'nome', 'funcao', 'ativo'],
   [TAB.FOTOS]: ['id', 'loteId', 'categoria', 'fileId', 'criadoEm'],
-  [TAB.INOC]: ['id', 'nome', 'receita', 'ativo', 'tempoHoras'],
-  [TAB.MEIO]: ['id', 'nome', 'receita', 'ativo', 'tempoHoras'],
+  [TAB.INOC]: ['id', 'nome', 'receita', 'ativo', 'tempoHoras', 'dose', 'doseUnid'],
+  [TAB.MEIO]: ['id', 'nome', 'receita', 'ativo', 'tempoHoras', 'dose', 'doseUnid'],
   [TAB.ORG]: ['id', 'nome', 'ativo'],
+  // Produtos: ligam o nome do produto ao organismo, inóculo e meio de cultura.
+  [TAB.PROD]: ['id', 'nome', 'organismo', 'inoculo', 'meio', 'ativo'],
   // Ações realizadas durante uma visita (coleta/vistoria em um fermentador/lote).
   [TAB.ACOES]: ['id', 'visitaId', 'tipo', 'fermentador', 'loteId', 'dt', 'obs'],
   // Medições de parâmetros ao longo do processo (série temporal por lote).
@@ -225,6 +230,7 @@ function getEstado() {
     inoculos: readAll_(TAB.INOC).filter(ativo_),
     meios: readAll_(TAB.MEIO).filter(ativo_),
     organismos: readAll_(TAB.ORG).filter(ativo_),
+    produtos: readAll_(TAB.PROD).filter(ativo_),
     acoes: readAll_(TAB.ACOES),
     medicoes: readAll_(TAB.MED),
     fotos: readAll_(TAB.FOTOS),
@@ -237,7 +243,8 @@ function ativo_(o) { return String(o.ativo) !== 'false'; }
 
 // Catálogos: inóculos, meios de cultura e organismos.
 function catTab_(tipo) {
-  return tipo === 'inoculo' ? TAB.INOC : tipo === 'meio' ? TAB.MEIO : tipo === 'organismo' ? TAB.ORG : null;
+  return tipo === 'inoculo' ? TAB.INOC : tipo === 'meio' ? TAB.MEIO
+    : tipo === 'organismo' ? TAB.ORG : tipo === 'produto' ? TAB.PROD : null;
 }
 
 function salvarCatalogo(tipo, item) {
@@ -245,7 +252,13 @@ function salvarCatalogo(tipo, item) {
     var tab = catTab_(tipo);
     if (!tab) throw new Error('Tipo de cadastro inválido');
     var obj = { id: item.id, nome: item.nome, ativo: true };
-    if (tab !== TAB.ORG) { obj.receita = item.receita || ''; obj.tempoHoras = item.tempoHoras || ''; }
+    if (tab === TAB.INOC || tab === TAB.MEIO) {
+      obj.receita = item.receita || ''; obj.tempoHoras = item.tempoHoras || '';
+      obj.dose = item.dose || ''; obj.doseUnid = item.doseUnid || '';
+    }
+    if (tab === TAB.PROD) {
+      obj.organismo = item.organismo || ''; obj.inoculo = item.inoculo || ''; obj.meio = item.meio || '';
+    }
     var sh = sheet_(tab);
     var row = findRow_(sh, item.id);
     if (row === -1) sh.appendRow(rowFromObj_(tab, obj));
