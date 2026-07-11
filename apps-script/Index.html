@@ -81,6 +81,18 @@
     padding:11px 18px; border-radius:10px; font-size:13px; font-weight:700; border:1px solid; box-shadow:0 6px 20px rgba(0,0,0,.22)}
   .grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px}
   @media(max-width:420px){ .grid2{grid-template-columns:1fr} }
+  /* Registro rápido de leitura (pH/temperatura) */
+  .stepper{display:flex; align-items:stretch; gap:8px; margin-bottom:4px}
+  .stepper input{text-align:center; font-size:22px; font-weight:700; padding:12px 6px}
+  .stepper button{flex:0 0 56px; font-size:24px; font-weight:700; background:var(--brand2); color:var(--gold);
+    border:none; border-radius:9px; font-family:inherit; line-height:1}
+  .stepper button:active{background:#5a4020}
+  .medlabel{display:flex; justify-content:space-between; align-items:baseline; margin:2px 0 4px}
+  .medlabel .faixa{font-size:11px; color:var(--muted)}
+  .medlabel .faixa.fora{color:#b5651d; font-weight:700}
+  details.maisopc{margin:6px 0 12px}
+  details.maisopc summary{cursor:pointer; color:var(--muted); font-size:13px; padding:6px 0; list-style:none}
+  details.maisopc summary::-webkit-details-marker{display:none}
   .stat{background:var(--surface); border:1px solid var(--line); border-top:4px solid var(--green); border-radius:10px; padding:14px}
   .stat b{display:block; font-size:28px}
   .stat span{font-size:12px; color:var(--muted)}
@@ -861,17 +873,37 @@ function secVisitas(l){
   return h;
 }
 
+// Linha de leitura rápida com botões − / ＋ (sem precisar do teclado).
+function stepRow(label,id,valor,passo,faixa){
+  var v=num(valor);
+  var fora = v!==null && faixa && (v<faixa[0]||v>faixa[1]);
+  var alvo = faixa ? '<span class="faixa'+(fora?" fora":"")+'">alvo '+faixa[0]+'–'+faixa[1]+(fora?" ⚠":"")+'</span>' : '';
+  return '<div class="medlabel"><label style="margin:0">'+label+'</label>'+alvo+'</div>'
+    +'<div class="stepper">'
+    +'<button type="button" data-step="'+id+'|'+(-passo)+'|'+passo+'">−</button>'
+    +'<input id="'+id+'" type="number" inputmode="decimal" step="'+passo+'" value="'+esc(valor||"")+'" placeholder="—">'
+    +'<button type="button" data-step="'+id+'|'+passo+'|'+passo+'">＋</button>'
+    +'</div>';
+}
 function secMonitor(l){
   var fx=faixaDe(l.microrganismo);
   var meds=medicoesDe(l.id).slice().reverse();
   var c=consolidarLote(l);
-  var h='<div class="card"><div class="sec-title">Registrar leitura de parâmetros</div>'
-    +'<p class="muted" style="margin-top:0">Faixa-alvo p/ '+esc(l.microrganismo||"organismo")+': pH '+fx.ph[0]+'–'+fx.ph[1]+' · Temp '+fx.temp[0]+'–'+fx.temp[1]+' °C</p>'
-    +field("Data/Hora","md_dt",nowDT(),"datetime-local")
-    +'<div class="grid2">'+fieldNum("pH","md_ph","","Ex: 6.8","0.1")+fieldNum("Temperatura (°C)","md_temp","","Ex: 32","0.1")+'</div>'
-    +'<div class="grid2">'+fieldNum("O₂ dissolvido (%)","md_o2","")+fieldNum("Agitação (rpm)","md_agit","")+'</div>'
+  var ult=meds[0]||null;   // leitura mais recente (repete os valores para a próxima)
+  // Pré-preenche pH/temp: usa a última leitura; se não houver, usa o que está na Ficha.
+  var phIni = ult ? ult.ph : (num(l.ph)!==null ? l.ph : "");
+  var tpIni = ult ? ult.temperatura : (num(l.temperatura)!==null ? l.temperatura : "");
+  var h='<div class="card"><div class="sec-title">Registrar leitura</div>'
+    +'<p class="muted" style="margin-top:0">'+esc(l.microrganismo||"Organismo")+' · '
+      +(ult?'valores repetidos da última leitura — ajuste com − / ＋':'valores vindos da Ficha — ajuste com − / ＋')+'</p>'
+    +stepRow("pH","md_ph",phIni,0.1,fx.ph)
+    +stepRow("Temperatura (°C)","md_temp",tpIni,0.5,fx.temp)
+    +'<details class="maisopc"><summary>＋ Mais opções (O₂, agitação, hora, observação)</summary>'
+    +'<div class="grid2">'+fieldNum("O₂ dissolvido (%)","md_o2",ult?ult.oxigenio:"")+fieldNum("Agitação (rpm)","md_agit",ult?ult.agitacao:"")+'</div>'
+    +field("Data/Hora (vazio = agora)","md_dt","","datetime-local")
     +field("Observação","md_obs","")
-    +'<button class="btn green" id="btnAddMed">＋ Registrar leitura</button></div>';
+    +'</details>'
+    +'<button class="btn green" id="btnAddMed">✅ Registrar leitura (agora)</button></div>';
   if(meds.length){
     h+='<div class="card"><div class="sec-title">Resumo</div>'
       +'<div class="grid2">'
@@ -1202,7 +1234,7 @@ function addAjuste(){
 function addMedicao(){
   var l=loteAtual(); if(!l) return;
   if([val("md_ph"),val("md_temp"),val("md_o2"),val("md_agit")].every(function(v){return !v.trim();})){ toast("Informe ao menos pH ou temperatura.","err"); return; }
-  var m={ id:makeId(), loteId:l.id, dt:val("md_dt"), ph:val("md_ph"), temperatura:val("md_temp"), oxigenio:val("md_o2"), agitacao:val("md_agit"), obs:val("md_obs") };
+  var m={ id:makeId(), loteId:l.id, dt:val("md_dt")||nowDT(), ph:val("md_ph"), temperatura:val("md_temp"), oxigenio:val("md_o2"), agitacao:val("md_agit"), obs:val("md_obs") };
   overlay(true);
   api.addMedicao(m).then(function(){ S.estado.medicoes.push(m); overlay(false); render(); toast("Leitura registrada."); })
     .catch(function(){ overlay(false); toast("Erro","err"); });
@@ -1352,8 +1384,9 @@ function fallbackPdfLink(res,num,legenda){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-bstatus],[data-saidav],[data-delvisitag],[data-delacao],[data-delajuste],[data-delmed],[data-delfunc],[data-delfoto],[data-delcat],#btnSalvarFicha,#btnIniciar,#btnFinalizar,#btnSalvarRelatorio,#btnAddVisitaG,#btnAddAcao,#btnAddMed,#btnAddAjuste,#btnExcluir,#btnWhats,#btnCopiar,#btnAddFunc,#btnAddCat,#btnFoto,#btnVerPdf,#btnPdfWhats,#btnCSV");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-bstatus],[data-saidav],[data-delvisitag],[data-delacao],[data-delajuste],[data-delmed],[data-delfunc],[data-delfoto],[data-delcat],#btnSalvarFicha,#btnIniciar,#btnFinalizar,#btnSalvarRelatorio,#btnAddVisitaG,#btnAddAcao,#btnAddMed,#btnAddAjuste,#btnExcluir,#btnWhats,#btnCopiar,#btnAddFunc,#btnAddCat,#btnFoto,#btnVerPdf,#btnPdfWhats,#btnCSV");
     if(!t) return;
+    if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
     if(t.dataset.nav){ capturarSecaoAtual(); S.view=t.dataset.nav; render(); return; }
     if(t.dataset.hist){ capturarSecaoAtual(); S.aFer=t.dataset.hist; S.view="historico"; render(); return; }
@@ -1413,6 +1446,15 @@ function bind(){
 function agendarAutosave(){
   clearTimeout(agendarAutosave._t);
   agendarAutosave._t=setTimeout(function(){ capturarSecaoAtual(); }, 600);
+}
+// Botões − / ＋ das leituras de pH e temperatura (ajuste rápido sem teclado).
+function passoLeitura(spec){
+  var p=spec.split("|"); var input=el(p[0]); if(!input) return;
+  var delta=parseFloat(p[1]); var passo=parseFloat(p[2])||0.1;
+  var cur=parseFloat(input.value); if(isNaN(cur)) cur=0;
+  var nv=cur+delta; if(nv<0) nv=0;
+  var dec=(String(passo).split(".")[1]||"").length;
+  input.value=nv.toFixed(dec);
 }
 
 function copiarLaudo(){
