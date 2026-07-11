@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BioFábrica · Controle de Produção</title>
+<style>
+  :root{
+    --bg:#f2ebe0; --surface:#faf5eb; --surface2:#fffdf7; --ink:#3b2a1a; --muted:#8a7060;
+    --line:#e0d4b8; --brand:#3d2e1a; --brand2:#6b4c20; --gold:#e8d4a0;
+    --green:#4a7c59; --greenBg:#eaf5ea; --amber:#c8860a; --amberBg:#fef8e7;
+    --blue:#5a7fa8; --blueBg:#eef3fb; --dgreen:#3d6b3d; --red:#8b3a3a; --redBg:#fbeaea;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:Georgia,'Times New Roman',serif; background:var(--bg); color:var(--ink);
+    -webkit-text-size-adjust:100%;
+    padding-bottom:calc(74px + env(safe-area-inset-bottom));
+    background-image:radial-gradient(1200px 400px at 100% -10%, rgba(107,76,32,.06), transparent 60%);
+  }
+  header{
+    background:linear-gradient(180deg,#4a3720,#33260f); border-bottom:3px solid var(--brand2);
+    position:sticky; top:0; z-index:50; box-shadow:0 2px 10px rgba(43,32,22,.18);
+    padding:12px 16px; padding-top:calc(12px + env(safe-area-inset-top));
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+  .brand{display:flex; align-items:center; gap:10px}
+  .brand .logo{font-size:26px}
+  .brand .nome{font-size:15px; font-weight:700; color:var(--gold)}
+  .brand .sub{font-size:10px; color:#a08c66}
+  .refresh{background:transparent; border:1px solid #5a4020; color:#bfa877; border-radius:6px;
+    padding:6px 10px; font-size:13px; font-family:inherit}
+  main{max-width:680px; margin:0 auto; padding:16px}
+  h1{font-size:20px; margin:0 0 4px}
+  .sub2{color:var(--muted); font-size:13px; margin:0 0 14px}
+  .voltar{background:transparent;border:none;color:var(--muted);font-family:inherit;font-size:13px;
+    padding:0;margin-bottom:8px;text-decoration:underline}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:15px;
+    margin-bottom:12px; box-shadow:0 2px 8px rgba(43,32,22,.05)}
+  .fer-card{border-top:5px solid var(--green); box-shadow:0 4px 14px rgba(43,32,22,.08)}
+  .row{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap}
+  .fer-id{font-size:28px; font-weight:900; letter-spacing:-1px; line-height:1}
+  .vol{font-size:12px; color:#b09070}
+  .muted{color:var(--muted); font-size:12px}
+  .badge{display:inline-flex; align-items:center; gap:5px; border-radius:99px; padding:3px 11px; font-size:11px; font-weight:700; border:1px solid}
+  .badge .dot{width:7px; height:7px; border-radius:50%; background:currentColor; display:inline-block}
+  button{cursor:pointer; font-family:inherit; transition:transform .05s ease, opacity .15s ease}
+  button:active{transform:scale(.98)}
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:6px; width:100%;
+    background:linear-gradient(180deg,#4a3720,#3a2b18); color:var(--gold); border:none; border-radius:11px; padding:14px 16px;
+    font-size:15px; font-weight:700; margin-top:6px; box-shadow:0 3px 10px rgba(43,32,22,.18)}
+  .btn.sec{background:var(--surface2); color:var(--brand2); border:1px solid var(--line)}
+  .btn.green{background:var(--green); color:#fff}
+  .btn.wa{background:#25D366; color:#fff}
+  .btn.danger{background:var(--surface2); color:var(--red); border:1px solid #d8b4b4}
+  .btn.small{width:auto; padding:9px 13px; font-size:13px; margin-top:0}
+  .btn-row{display:flex; gap:8px; flex-wrap:wrap}
+  label{display:block; font-size:10px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); font-weight:700; margin-bottom:4px}
+  input,select,textarea{width:100%; background:var(--surface2); border:1px solid #d4c4a8; border-radius:7px;
+    color:var(--ink); padding:11px; font-size:16px; font-family:inherit; outline:none}
+  textarea{resize:vertical; min-height:70px}
+  .field{margin-bottom:12px}
+  .sec-title{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; color:var(--muted);
+    padding-bottom:8px; border-bottom:1px solid #ede5d0; margin:0 0 12px}
+  .segs{display:flex; gap:6px; overflow-x:auto; padding-bottom:6px; margin-bottom:14px; -webkit-overflow-scrolling:touch}
+  .seg{white-space:nowrap; background:var(--surface2); border:1px solid var(--line); border-radius:99px;
+    padding:8px 14px; font-size:13px; color:var(--muted)}
+  .seg.on{background:var(--brand2); color:var(--gold); border-color:var(--brand2); font-weight:700}
+  .vazio{color:#b09070; font-size:13px; text-align:center; padding:22px; border:1px dashed #d4c4a8; border-radius:10px; background:var(--surface)}
+  pre.laudo{white-space:pre-wrap; word-wrap:break-word; background:var(--surface2); border:1px solid #d4c4a8;
+    border-radius:8px; padding:14px; font-family:Georgia,serif; font-size:13.5px; line-height:1.5; color:var(--ink)}
+  #overlay{position:fixed; inset:0; background:rgba(60,45,26,.35); display:none; align-items:center; justify-content:center; z-index:200}
+  #overlay .box{background:var(--surface); border-radius:10px; padding:16px 22px; font-size:14px; color:var(--brand)}
+  #toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(84px + env(safe-area-inset-bottom)); z-index:300; display:none;
+    padding:11px 18px; border-radius:10px; font-size:13px; font-weight:700; border:1px solid; box-shadow:0 6px 20px rgba(0,0,0,.22)}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  @media(max-width:420px){ .grid2{grid-template-columns:1fr} }
+  .stat{background:var(--surface); border:1px solid var(--line); border-top:4px solid var(--green); border-radius:10px; padding:14px}
+  .stat b{display:block; font-size:28px}
+  .stat span{font-size:12px; color:var(--muted)}
+  .fotogrid{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .fotocard{background:var(--surface); border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  .fotocard img{width:100%; height:120px; object-fit:cover; display:block; background:#eee}
+  .fotocard .row{padding:6px 8px}
+  .cd{font-weight:700;font-size:13px}
+  .cdbar{background:linear-gradient(180deg,#fff8e6,#fdf0cf);border:1px solid #e2c079;border-radius:10px;padding:9px 12px;margin-top:8px;text-align:center;box-shadow:inset 0 1px 0 #fff}
+  /* Barra de progresso do processo */
+  .prog{height:8px;border-radius:99px;background:#eadfc6;overflow:hidden;margin:8px 0 2px}
+  .prog > i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#c8860a,#e0a83a)}
+  .prog.done > i{background:linear-gradient(90deg,#4a7c59,#5f9a6f)}
+  /* Barra de navegação inferior (cara de app) */
+  #tabbar{position:fixed;left:0;right:0;bottom:0;z-index:80;display:flex;
+    background:rgba(250,245,235,.96);backdrop-filter:blur(8px);
+    border-top:1px solid var(--line);box-shadow:0 -3px 14px rgba(43,32,22,.10);
+    padding-bottom:env(safe-area-inset-bottom)}
+  #tabbar button{flex:1;background:none;border:none;padding:8px 2px 9px;display:flex;flex-direction:column;
+    align-items:center;gap:2px;color:var(--muted);font-size:10.5px;font-weight:700;letter-spacing:.2px}
+  #tabbar button .ic{font-size:20px;line-height:1;filter:grayscale(.35);opacity:.7}
+  #tabbar button.on{color:var(--brand2)}
+  #tabbar button.on .ic{filter:none;opacity:1}
+  #tabbar button.on::before{content:"";position:absolute;top:0;width:34px;height:3px;border-radius:0 0 6px 6px;background:var(--brand2)}
+  #tabbar button{position:relative}
+  .seg{transition:background .15s}
+  .stat{border-radius:14px}
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">🌿</span>
+      <div>
+        <div class="nome">Fazenda Água Viva</div>
+        <div class="sub">BioFábrica · Controle de Produção</div>
+      </div>
+    </div>
+    <button class="refresh" id="btnRefresh" title="Atualizar">⟳</button>
+  </header>
+
+  <main id="app"></main>
+
+  <div id="overlay"><div class="box">Carregando…</div></div>
+  <div id="toast"></div>
+  <nav id="tabbar"></nav>
+
+<script>
+// ─── CONFIGURAÇÃO DO LAUDO (edite aqui se mudar cabeçalho/endereço) ─
+var LAUDO_TITULO = "RELATÓRIO DE ANÁLISE MICROBIOLÓGICA ON FARM";
+var LAUDO_ENDERECO = ""; // opcional; deixe vazio se o cabeçalho já tem logo/endereço
+var LAUDO_CONTATO = "";  // opcional
+var CLIENTE_PADRAO = "Fazenda Água Viva";
+// Considerações fixas do modelo 2026:
+var LAUDO_CONSIDERACOES = [
+  "A coloração de Gram foi realizada utilizando uma alíquota da amostra líquida.",
+  "A amostra será retida para contraprova por 7 dias, contados a partir da emissão do relatório."
+];
+
+// ─── LISTAS ────────────────────────────────────────────────────────
+var STATUS_OPT = ["Disponível","Em Processo","Aguardando Análise","Concluído","Manutenção"];
+var STATUS_COR = {
+  "Disponível":         {bg:"#eaf5ea",bd:"#4a7c59",tx:"#2d5c3a"},
+  "Em Processo":        {bg:"#fef8e7",bd:"#c8860a",tx:"#8a5c00"},
+  "Aguardando Análise": {bg:"#eef3fb",bd:"#5a7fa8",tx:"#2a5070"},
+  "Concluído":          {bg:"#e8f0e8",bd:"#3d6b3d",tx:"#1e4020"},
+  "Manutenção":         {bg:"#fbeaea",bd:"#8b3a3a",tx:"#5c1a1a"},
+};
+var OBJ_VISITA = ["Preparo inicial","Inoculação","Verificação de processo","Coleta de amostra","Ajuste de pH","Adição de antiespuma","Encerramento / Colheita","Manutenção","Vistoria geral","Outro"];
+var TIPO_ACAO = ["Coleta","Vistoria"];
+var TIPO_AJUSTE = ["pH","Antiespuma","Temperatura","Aeração","Agitação","Outro"];
+var TIPO_AMOSTRA = ["Água","Inóculo","Meio de cultura","Multiplicado","Outro"];
+var MEIO_CULTURA = ["BAC","SM","BUG","CATP","FINISH","WHITE","Não se aplica"];
+var TIPO_COMPRESSOR = ["Odontológico/Parafuso","Radial","Venturi"];
+var SIM_NAO = ["Não","Sim"];
+var GRAM_OPT = ["Sim","Não"];
+var OUTROS_MICRO = ["","Ausente","Presente","BC (baixa contagem)"];
+var FUNCAO_OPT = ["Operador","Analista","Coletor","Supervisor","Outro"];
+var FOTO_CAT = ["Placa diluição 10-4","Placa diluição 10-5","Microscopia/Gram","Outros (sem choque)","Outra"];
+
+// ─── HELPERS ───────────────────────────────────────────────────────
+function makeId(){ return Math.random().toString(36).slice(2,9).toUpperCase(); }
+function p2(n){ return String(n).padStart(2,"0"); }
+function nowDT(){ var d=new Date(); return d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate())+"T"+p2(d.getHours())+":"+p2(d.getMinutes()); }
+function nowDate(){ var d=new Date(); return d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate()); }
+function fmt(s){ if(!s) return "—"; var d=new Date(s); if(isNaN(d)) return String(s);
+  return d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}); }
+function fmtDate(s){ if(!s) return "—"; var p=String(s).split("T")[0].split("-"); if(p.length<3) return String(s); return p[2]+"/"+p[1]+"/"+p[0]; }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }
+function el(id){ return document.getElementById(id); }
+function val(id){ var e=el(id); return e?e.value:""; }
+function toast(m,tipo){
+  var t=el("toast");
+  if(tipo==="err"){ t.style.background="#5c1a1a"; t.style.color="#e8b4b4"; t.style.borderColor="#a05050"; }
+  else { t.style.background="#1a3a1a"; t.style.color="#a8d4a8"; t.style.borderColor="#4a7c59"; }
+  t.textContent=m; t.style.display="block";
+  clearTimeout(toast._t); toast._t=setTimeout(function(){ t.style.display="none"; },2600);
+}
+function overlay(on){ el("overlay").style.display=on?"flex":"none"; }
+
+// ─── CAMPOS ────────────────────────────────────────────────────────
+function field(label,id,value,type,ph){
+  return '<div class="field"><label>'+label+'</label><input id="'+id+'" type="'+(type||"text")+'" value="'+esc(value||"")+'" placeholder="'+esc(ph||"")+'"></div>';
+}
+function fieldNum(label,id,value,ph,step){
+  return '<div class="field"><label>'+label+'</label><input id="'+id+'" type="number" inputmode="decimal" step="'+(step||"any")+'" value="'+esc(value||"")+'" placeholder="'+esc(ph||"")+'"></div>';
+}
+function fieldArea(label,id,value,ph){
+  return '<div class="field"><label>'+label+'</label><textarea id="'+id+'" placeholder="'+esc(ph||"")+'">'+esc(value||"")+'</textarea></div>';
+}
+function fieldSel(label,id,opts,cur){
+  var o=opts.map(function(v){ return '<option value="'+esc(v)+'"'+(String(v)===String(cur)?" selected":"")+'>'+(v===""?"—":esc(v))+'</option>'; }).join("");
+  return '<div class="field"><label>'+label+'</label><select id="'+id+'">'+o+'</select></div>';
+}
+// Campo de nome com autocomplete a partir dos funcionários cadastrados.
+function fieldFunc(label,id,value,ph){
+  return '<div class="field"><label>'+label+'</label><input id="'+id+'" list="dlFuncionarios" value="'+esc(value||"")+'" placeholder="'+esc(ph||"Digite ou escolha")+'"></div>';
+}
+function datalistFuncionarios(){
+  var nomes=(S.estado&&S.estado.funcionarios||[]).map(function(f){return '<option value="'+esc(f.nome)+'">';}).join("");
+  return '<datalist id="dlFuncionarios">'+nomes+'</datalist>';
+}
+
+// ─── CAMADA DE API (Google Apps Script ou mock local p/ teste) ─────
+function gcall(name){
+  var args=[].slice.call(arguments,1);
+  return new Promise(function(res,rej){
+    google.script.run.withSuccessHandler(res).withFailureHandler(rej)[name].apply(null,args);
+  });
+}
+var USANDO_GOOGLE = (typeof google!=="undefined" && google.script && google.script.run);
+var api = USANDO_GOOGLE ? {
+  getEstado:function(){return gcall("getEstado");},
+  setFermentadorStatus:function(id,s){return gcall("setFermentadorStatus",id,s);},
+  salvarLote:function(l){return gcall("salvarLote",l);},
+  excluirLote:function(id){return gcall("excluirLote",id);},
+  addVisita:function(v){return gcall("addVisita",v);},
+  atualizarVisita:function(v){return gcall("atualizarVisita",v);},
+  excluirVisita:function(id){return gcall("excluirVisita",id);},
+  addAcao:function(a){return gcall("addAcao",a);},
+  excluirAcao:function(id){return gcall("excluirAcao",id);},
+  addMedicao:function(m){return gcall("addMedicao",m);},
+  excluirMedicao:function(id){return gcall("excluirMedicao",id);},
+  addAjuste:function(a){return gcall("addAjuste",a);},
+  excluirAjuste:function(id){return gcall("excluirAjuste",id);},
+  addFuncionario:function(f){return gcall("addFuncionario",f);},
+  excluirFuncionario:function(id){return gcall("excluirFuncionario",id);},
+  salvarFoto:function(f){return gcall("salvarFoto",f);},
+  excluirFoto:function(id){return gcall("excluirFoto",id);},
+  gerarLaudoPdf:function(id){return gcall("gerarLaudoPdf",id);},
+  salvarCatalogo:function(tipo,item){return gcall("salvarCatalogo",tipo,item);},
+  excluirCatalogo:function(tipo,id){return gcall("excluirCatalogo",tipo,id);},
+} : mockApi();
+
+function mockApi(){
+  var KEY="biofabrica_mock_v2";
+  var FERM=[{id:"A1",volume:1500,tipo:"A"},{id:"A2",volume:1500,tipo:"A"},{id:"A3",volume:1500,tipo:"A"},{id:"A4",volume:1500,tipo:"A"},{id:"B1",volume:1000,tipo:"B"},{id:"B2",volume:1000,tipo:"B"},{id:"B3",volume:1000,tipo:"B"},{id:"B4",volume:1000,tipo:"B"},{id:"B5",volume:1000,tipo:"B"},{id:"B6",volume:1000,tipo:"B"}];
+  function load(){ try{ return JSON.parse(localStorage.getItem(KEY)) || null; }catch(e){ return null; } }
+  function save(d){ localStorage.setItem(KEY, JSON.stringify(d)); }
+  function db(){ var d=load(); if(!d){ d={ferStatus:{},lotes:[],visitas:[],ajustes:[],funcionarios:[],fotos:[],inoculos:[],meios:[],organismos:[],acoes:[],medicoes:[]}; FERM.forEach(function(f){d.ferStatus[f.id]="Disponível";}); save(d);} if(!d.funcionarios) d.funcionarios=[]; if(!d.fotos) d.fotos=[]; if(!d.inoculos) d.inoculos=[]; if(!d.meios) d.meios=[]; if(!d.organismos) d.organismos=[]; if(!d.acoes) d.acoes=[]; if(!d.medicoes) d.medicoes=[]; return d; }
+  function catKey(tipo){ return tipo==="inoculo"?"inoculos":tipo==="meio"?"meios":"organismos"; }
+  function ok(v){ return new Promise(function(r){ setTimeout(function(){ r(v); },100); }); }
+  // PDF mínimo válido para testar o fluxo localmente.
+  var MINI_PDF="JVBERi0xLjQKJcOkw7zDtsOfCjEgMCBvYmoKPDwvVHlwZS9DYXRhbG9nL1BhZ2VzIDIgMCBSPj4KZW5kb2JqCjIgMCBvYmoKPDwvVHlwZS9QYWdlcy9LaWRzWzMgMCBSXS9Db3VudCAxPj4KZW5kb2JqCjMgMCBvYmoKPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgMzAwIDE0NF0+PgplbmRvYmoKeHJlZgowIDQKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAp0cmFpbGVyCjw8L1NpemUgNC9Sb290IDEgMCBSPj4Kc3RhcnR4cmVmCjE5MgolJUVPRg==";
+  return {
+    getEstado:function(){ var d=db(); return ok({config:FERM,fermentadores:d.ferStatus,lotes:d.lotes,visitas:d.visitas,ajustes:d.ajustes,funcionarios:d.funcionarios,fotos:d.fotos,inoculos:d.inoculos,meios:d.meios,organismos:d.organismos,acoes:d.acoes,medicoes:d.medicoes,usuario:"demo@local",serverTime:new Date().toISOString()}); },
+    addAcao:function(a){ var d=db(); d.acoes.push(a); save(d); return ok(a); },
+    excluirAcao:function(id){ var d=db(); d.acoes=d.acoes.filter(function(x){return x.id!==id;}); save(d); return ok(true); },
+    addMedicao:function(m){ var d=db(); d.medicoes.push(m); save(d); return ok(m); },
+    excluirMedicao:function(id){ var d=db(); d.medicoes=d.medicoes.filter(function(x){return x.id!==id;}); save(d); return ok(true); },
+    salvarCatalogo:function(tipo,item){ var d=db(); var k=catKey(tipo); var obj={id:item.id,nome:item.nome,ativo:true}; if(tipo!=="organismo"){ obj.receita=item.receita||""; obj.tempoHoras=item.tempoHoras||""; } var i=d[k].findIndex(function(x){return x.id===item.id;}); if(i<0) d[k].push(obj); else d[k][i]=obj; save(d); return ok(obj); },
+    excluirCatalogo:function(tipo,id){ var d=db(); var k=catKey(tipo); d[k]=d[k].filter(function(x){return x.id!==id;}); save(d); return ok(true); },
+    addFuncionario:function(f){ var d=db(); var func={id:f.id,nome:f.nome,funcao:f.funcao||"",ativo:true}; d.funcionarios.push(func); save(d); return ok(func); },
+    excluirFuncionario:function(id){ var d=db(); d.funcionarios=d.funcionarios.filter(function(x){return x.id!==id;}); save(d); return ok(true); },
+    salvarFoto:function(f){ var d=db(); var rec={id:f.id,loteId:f.loteId,categoria:f.categoria||"",fileId:"data:"+(f.mimeType||"image/jpeg")+";base64,"+f.base64,criadoEm:new Date().toISOString()}; d.fotos.push(rec); save(d); return ok(rec); },
+    excluirFoto:function(id){ var d=db(); d.fotos=d.fotos.filter(function(x){return x.id!==id;}); save(d); return ok(true); },
+    gerarLaudoPdf:function(id){ var l=(db().lotes.find(function(x){return x.id===id;})||{}); return ok({base64:MINI_PDF,filename:"Laudo "+(l.loteNum||id)+".pdf",url:"about:blank#demo"}); },
+    setFermentadorStatus:function(id,s){ var d=db(); d.ferStatus[id]=s; save(d); return ok(true); },
+    salvarLote:function(l){ var d=db(); l.atualizadoEm=new Date().toISOString(); var i=d.lotes.findIndex(function(x){return x.id===l.id;}); if(i<0){ l.criadoPor=l.criadoPor||"demo@local"; l.criadoEm=l.criadoEm||new Date().toISOString(); d.lotes.push(l);} else { l.criadoPor=l.criadoPor||d.lotes[i].criadoPor; l.criadoEm=l.criadoEm||d.lotes[i].criadoEm; d.lotes[i]=l; } save(d); return ok(l); },
+    excluirLote:function(id){ var d=db(); d.lotes=d.lotes.filter(function(x){return x.id!==id;}); d.visitas=d.visitas.filter(function(x){return x.loteId!==id;}); d.ajustes=d.ajustes.filter(function(x){return x.loteId!==id;}); d.medicoes=(d.medicoes||[]).filter(function(x){return x.loteId!==id;}); save(d); return ok(true); },
+    addVisita:function(v){ var d=db(); d.visitas.push(v); save(d); return ok(v); },
+    atualizarVisita:function(v){ var d=db(); var i=d.visitas.findIndex(function(x){return x.id===v.id;}); if(i>=0) d.visitas[i]=v; save(d); return ok(v); },
+    excluirVisita:function(id){ var d=db(); d.visitas=d.visitas.filter(function(x){return x.id!==id;}); d.acoes=d.acoes.filter(function(x){return x.visitaId!==id;}); save(d); return ok(true); },
+    addAjuste:function(a){ var d=db(); d.ajustes.push(a); save(d); return ok(a); },
+    excluirAjuste:function(id){ var d=db(); d.ajustes=d.ajustes.filter(function(x){return x.id!==id;}); save(d); return ok(true); },
+  };
+}
+
+// ─── ESTADO ────────────────────────────────────────────────────────
+var S = { estado:null, view:"mapa", aFer:null, aLoteId:null, aVisitaId:null, secao:"ficha", cadAba:"organismos", buscaQ:"", buscaStatus:"todos", usuario:"" };
+function acoesDe(visitaId){ return (S.estado.acoes||[]).filter(function(a){return a.visitaId===visitaId;}); }
+function visitaAtual(){ return (S.estado.visitas||[]).find(function(v){return v.id===S.aVisitaId;}); }
+function nomeFer(loteId){ var l=(S.estado.lotes||[]).find(function(x){return x.id===loteId;}); return l?(l.loteNum||l.id):""; }
+// Próximo Nº de relatório (sequencial, 3 dígitos) a partir dos existentes.
+function proximoNumeroRelatorio(){
+  var max=0;
+  (S.estado.lotes||[]).forEach(function(l){ var n=parseInt(String(l.numeroRelatorio||"").replace(/\D/g,""),10); if(!isNaN(n)&&n>max) max=n; });
+  return String(max+1).padStart(3,"0");
+}
+// Rascunho local do lote (não perde o que digitou ao trocar de aba/recarregar).
+function draftKey(id){ return "biofabrica_rascunho_"+id; }
+function salvarRascunho(l){ try{ localStorage.setItem(draftKey(l.id), JSON.stringify(l)); }catch(e){} }
+function aplicarRascunho(id){ try{ var r=localStorage.getItem(draftKey(id)); if(r){ var d=JSON.parse(r); var l=(S.estado.lotes||[]).find(function(x){return x.id===id;}); if(l) Object.assign(l,d); } }catch(e){} }
+function limparRascunho(id){ try{ localStorage.removeItem(draftKey(id)); }catch(e){} }
+// Captura os campos da seção atual para a memória (evita perder ao trocar de aba).
+function capturarSecaoAtual(){
+  if(S.view!=="lote") return;
+  var l=loteAtual(); if(!l) return;
+  if(S.secao==="ficha" && el("f_loteNum")){ coletarFicha(l); salvarRascunho(l); }
+  else if(S.secao==="relatorio" && el("r_num")){ coletarRelatorio(l); salvarRascunho(l); }
+}
+// ─── ANÁLISE DE DADOS ──────────────────────────────────────────────
+// Faixas-alvo (referência) de pH e temperatura por organismo. Ajuste conforme
+// sua realidade — são valores gerais de literatura para multiplicação on farm.
+var FAIXAS=[
+  {chave:"bacillus",     ph:[6.5,7.5], temp:[30,37]},
+  {chave:"trichoderma",  ph:[4.5,6.5], temp:[25,30]},
+  {chave:"azospirillum", ph:[6.8,7.2], temp:[30,35]},
+  {chave:"pseudomonas",  ph:[6.5,7.5], temp:[28,32]},
+  {chave:"beauveria",    ph:[5.5,6.5], temp:[25,28]},
+  {chave:"metarhizium",  ph:[5.5,6.5], temp:[25,28]},
+  {chave:"lactobacillus",ph:[5.5,6.5], temp:[30,37]},
+];
+var FAIXA_PADRAO={ph:[6.0,7.5], temp:[28,34]};
+function faixaDe(micro){ micro=(micro||"").toLowerCase(); for(var i=0;i<FAIXAS.length;i++){ if(micro.indexOf(FAIXAS[i].chave)>=0) return FAIXAS[i]; } return FAIXA_PADRAO; }
+
+function num(v){ if(v===undefined||v===null) return null; var t=String(v).trim().replace(',','.'); if(t===''||/n\/?a/i.test(t)) return null; var n=parseFloat(t); return isNaN(n)?null:n; }
+// Converte "2,5×10⁹ UFC/mL", "1e9", "1000000000" → número.
+function parseUFC(s){
+  if(s===undefined||s===null) return null;
+  var sup={'⁰':'0','¹':'1','²':'2','³':'3','⁴':'4','⁵':'5','⁶':'6','⁷':'7','⁸':'8','⁹':'9'};
+  var t=String(s).toLowerCase().replace(/ufc\/?ml/g,'').replace(/\s/g,'').replace(',','.').replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g,function(c){return sup[c];});
+  var m=t.match(/^([0-9.]+)[x×*]10\^?([0-9]+)$/);
+  if(m) return parseFloat(m[1])*Math.pow(10,parseInt(m[2],10));
+  var n=parseFloat(t);
+  return isNaN(n)?null:n;
+}
+function fmtUFCnum(n){
+  if(n===null||isNaN(n)) return "—";
+  if(n<1000) return String(Math.round(n));
+  var e=Math.floor(Math.log10(n)); var mant=n/Math.pow(10,e);
+  var sup="0123456789".split("").reduce(function(o,d,i){o[d]="⁰¹²³⁴⁵⁶⁷⁸⁹"[i];return o;},{});
+  return (mant.toFixed(1).replace('.',',')) + "×10" + String(e).split("").map(function(d){return sup[d]||d;}).join("") ;
+}
+function media(arr){ var v=arr.filter(function(x){return x!==null&&!isNaN(x);}); if(!v.length) return null; return v.reduce(function(a,b){return a+b;},0)/v.length; }
+function medicoesDe(loteId){ return (S.estado.medicoes||[]).filter(function(m){return m.loteId===loteId;}); }
+
+// Consolida um lote: condições de processo + resultado do laudo.
+function consolidarLote(l){
+  var meds=medicoesDe(l.id);
+  var phs=meds.map(function(m){return num(m.ph);}).filter(function(x){return x!==null;});
+  var temps=meds.map(function(m){return num(m.temperatura);}).filter(function(x){return x!==null;});
+  if(!phs.length && num(l.ph)!==null) phs=[num(l.ph)];
+  if(!temps.length && num(l.temperatura)!==null) temps=[num(l.temperatura)];
+  var fx=faixaDe(l.microrganismo);
+  var phMed=media(phs), tMed=media(temps);
+  var phIn=phs.length?Math.round(phs.filter(function(v){return v>=fx.ph[0]&&v<=fx.ph[1];}).length/phs.length*100):null;
+  var tIn=temps.length?Math.round(temps.filter(function(v){return v>=fx.temp[0]&&v<=fx.temp[1];}).length/temps.length*100):null;
+  var horas=null; if(l.dtInicio&&l.dtFim){ var d=(new Date(l.dtFim)-new Date(l.dtInicio))/3600000; if(!isNaN(d)&&d>0) horas=Math.round(d); }
+  return {
+    lote:l, organismo:l.microrganismo||"—", meio:l.meio||"—", inoculo:l.inoculo||"—",
+    faixa:fx, phMed:phMed, tMed:tMed, phDentro:phIn, tDentro:tIn,
+    nMed:meds.length, nAjustes:ajustesDe(l.id).length, horas:horas,
+    ufc:parseUFC(l.resultadoQuantitativo), outros:l.outrosMicrorganismos||"—", status:l.status
+  };
+}
+// Só lotes com resultado (base de análise).
+function lotesAnalisaveis(){ return (S.estado.lotes||[]).map(consolidarLote).filter(function(c){return c.ufc!==null;}); }
+
+function nomesFunc(){ return (S.estado.funcionarios||[]).map(function(f){return f.nome;}); }
+function nomesOrg(){ return (S.estado.organismos||[]).map(function(o){return o.nome;}); }
+function nomesInoc(){ return (S.estado.inoculos||[]).map(function(x){return x.nome;}); }
+function nomesMeio(){ return (S.estado.meios||[]).map(function(x){return x.nome;}); }
+function receitaDe(lista,nome){ var it=(S.estado[lista]||[]).find(function(x){return x.nome===nome;}); return it?(it.receita||""):""; }
+function tempoDe(lista,nome){ var it=(S.estado[lista]||[]).find(function(x){return x.nome===nome;}); return it&&it.tempoHoras?Number(it.tempoHoras):0; }
+// Alvo (epoch ms) do fim previsto = início + tempo de produção.
+function alvoFim(l){ if(!l.dtInicio||!l.tempoProducaoH) return null; var t=new Date(l.dtInicio).getTime(); if(isNaN(t)) return null; return t + Number(l.tempoProducaoH)*3600000; }
+function countdownHtml(l){ var a=alvoFim(l); if(!a||l.status==="Concluído"||l.status==="Reprovado") return ""; return '<span class="cd" data-until="'+a+'"></span>'; }
+function tickCountdowns(){
+  var now=Date.now();
+  var els=document.querySelectorAll(".cd[data-until]");
+  for(var i=0;i<els.length;i++){
+    var sp=els[i], a=Number(sp.getAttribute("data-until")), d=a-now;
+    if(d>0){ var h=Math.floor(d/3600000), m=Math.floor((d%3600000)/60000); sp.textContent="⏳ faltam "+h+"h "+m+"min"; sp.style.color="#8a5c00"; }
+    else { var hh=Math.floor(-d/3600000); sp.textContent="⏱ tempo concluído"+(hh>0?(" (há "+hh+"h)"):""); sp.style.color="#2d5c3a"; }
+  }
+}
+// Campo de seleção obrigatória (operador não digita, só escolhe).
+function selNomes(label,id,nomes,cur,extra){
+  var o='<option value="">— selecione —</option>'; var has=false;
+  nomes.forEach(function(n){ if(n===cur) has=true; o+='<option'+(n===cur?" selected":"")+'>'+esc(n)+'</option>'; });
+  if(cur && !has) o+='<option selected>'+esc(cur)+'</option>';
+  return '<div class="field"><label>'+label+'</label><select id="'+id+'"'+(extra||"")+'>'+o+'</select></div>';
+}
+function lotesDe(ferId){ return (S.estado.lotes||[]).filter(function(l){return l.fermentador===ferId;}); }
+function loteAtual(){ return (S.estado.lotes||[]).find(function(l){return l.id===S.aLoteId;}); }
+function visitasDe(loteId){ return (S.estado.visitas||[]).filter(function(v){return v.loteId===loteId;}); }
+function ajustesDe(loteId){ return (S.estado.ajustes||[]).filter(function(a){return a.loteId===loteId;}); }
+function fotosDe(loteId){ return (S.estado.fotos||[]).filter(function(f){return f.loteId===loteId;}); }
+function ferConfig(id){ return (S.estado.config||[]).find(function(f){return f.id===id;})||{volume:""}; }
+function thumbUrl(fileId){ return (String(fileId).indexOf("data:")===0) ? fileId : ("https://drive.google.com/thumbnail?id="+fileId+"&sz=w400"); }
+function b64toBlob(b64,type){ var bin=atob(b64); var len=bin.length; var arr=new Uint8Array(len); for(var i=0;i<len;i++) arr[i]=bin.charCodeAt(i); return new Blob([arr],{type:type||"application/octet-stream"}); }
+
+function carregar(){
+  overlay(true);
+  return api.getEstado().then(function(e){
+    S.estado=e; S.usuario=e.usuario||""; overlay(false); render();
+  }).catch(function(err){ overlay(false); toast("Erro ao carregar: "+(err&&err.message||err),"err"); });
+}
+// Atualização automática (sem overlay), só em telas de leitura — não mexe em formulários abertos.
+var VIEWS_SYNC = { mapa:1, painel:1, historico:1, visitas:1, buscar:1 };
+function autoSync(){
+  if(document.hidden || !S.estado) return;
+  if(!VIEWS_SYNC[S.view]) return;
+  api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; render(); }).catch(function(){});
+}
+
+// ─── RENDER ────────────────────────────────────────────────────────
+function render(){
+  var app=el("app");
+  if(!S.estado){ app.innerHTML=""; return; }
+  if(S.view==="mapa") app.innerHTML=viewMapa();
+  else if(S.view==="painel") app.innerHTML=viewPainel();
+  else if(S.view==="cadastros") app.innerHTML=viewCadastros();
+  else if(S.view==="visitas") app.innerHTML=viewVisitas();
+  else if(S.view==="visita") app.innerHTML=viewVisitaDetalhe();
+  else if(S.view==="buscar") app.innerHTML=viewBuscar();
+  else if(S.view==="historico") app.innerHTML=viewHistorico();
+  else if(S.view==="lote") app.innerHTML=viewLote();
+  window.scrollTo(0,0); bind(); tickCountdowns(); renderTabbar();
+}
+
+// Barra de navegação inferior (destinos principais).
+function renderTabbar(){
+  var tb=el("tabbar"); if(!tb) return;
+  var atual = ({historico:"mapa",lote:"mapa",visita:"visitas",buscar:"buscar"})[S.view] || S.view;
+  var itens=[["mapa","🏭","Início"],["buscar","🔎","Lotes"],["visitas","👥","Visitas"],["cadastros","📚","Cadastros"],["painel","📊","Painel"]];
+  tb.innerHTML=itens.map(function(it){
+    return '<button data-nav="'+it[0]+'" class="'+(atual===it[0]?"on":"")+'"><span class="ic">'+it[1]+'</span>'+it[2]+'</button>';
+  }).join("");
+  tb.onclick=function(ev){ var b=ev.target.closest("[data-nav]"); if(b){ capturarSecaoAtual(); S.view=b.dataset.nav; render(); } };
+}
+// Progresso do processo (0–100% do tempo previsto).
+function progressoHtml(l){
+  var a=alvoFim(l); if(!a||!l.dtInicio) return "";
+  var ini=new Date(l.dtInicio).getTime(); if(isNaN(ini)) return "";
+  var tot=a-ini; if(tot<=0) return "";
+  var pct=Math.max(0,Math.min(100, Math.round((Date.now()-ini)/tot*100)));
+  return '<div class="prog'+(pct>=100?' done':'')+'"><i style="width:'+pct+'%"></i></div>';
+}
+function badge(status){ var c=STATUS_COR[status]||STATUS_COR["Disponível"];
+  return '<span class="badge" style="background:'+c.bg+';color:'+c.tx+';border-color:'+c.bd+'"><span class="dot" style="background:'+c.bd+'"></span>'+esc(status)+'</span>'; }
+function selectStatus(id,cur,attr){ var o=STATUS_OPT.map(function(s){return '<option'+(s===cur?" selected":"")+'>'+s+'</option>';}).join("");
+  return '<select '+attr+'>'+o+'</select>'; }
+
+function viewMapa(){
+  var h='<h1>Fermentadores</h1>'
+    +'<p class="sub2">Toque em um fermentador para ver o histórico ou iniciar um novo lote.</p>';
+  ["A","B"].forEach(function(tipo){
+    h+='<div class="muted" style="text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin:14px 0 8px">Série '+tipo+(tipo==="A"?" — 1.500 L":" — 1.000 L")+'</div>';
+    (S.estado.config||[]).filter(function(f){return f.tipo===tipo;}).forEach(function(f){
+      var st=S.estado.fermentadores[f.id]||"Disponível";
+      var c=STATUS_COR[st]||STATUS_COR["Disponível"];
+      var ls=lotesDe(f.id); var emProc=ls.find(function(l){return l.status==="Em Processo";});
+      h+='<div class="card fer-card" style="border-top-color:'+c.bd+';background:'+c.bg+'">'
+        +'<div class="row"><span class="fer-id" style="color:'+c.tx+'">'+f.id+'</span><span class="vol">'+Number(f.volume).toLocaleString("pt-BR")+' L</span></div>'
+        +'<div style="margin:6px 0">'+badge(st)+'</div>'
+        +(emProc&&emProc.produto?'<div class="muted"><b>Produto:</b> '+esc(emProc.produto)+'</div>':'')
+        +(emProc?progressoHtml(emProc):'')
+        +(emProc&&countdownHtml(emProc)?'<div style="margin-top:2px">'+countdownHtml(emProc)+'</div>':'')
+        +'<div class="muted">'+ls.length+' lote(s) registrado(s)</div>'
+        +'<div class="field" style="margin:10px 0 8px">'+selectStatus(f.id,st,'data-ferstatus="'+f.id+'"')+'</div>'
+        +'<div class="btn-row">'
+          +'<button class="btn sec small" data-hist="'+f.id+'">📋 Histórico</button>'
+          +(st!=="Em Processo"&&st!=="Manutenção"?'<button class="btn green small" data-novo="'+f.id+'">+ Novo Lote</button>':'')
+          +(emProc?'<button class="btn small" data-abrir="'+f.id+'|'+emProc.id+'">▶ Abrir</button>':'')
+        +'</div></div>';
+    });
+  });
+  return h;
+}
+
+function viewPainel(){
+  var cfg=S.estado.config||[];
+  var emProc=cfg.filter(function(f){return (S.estado.fermentadores[f.id]||"")==="Em Processo";}).length;
+  var disp=cfg.filter(function(f){return (S.estado.fermentadores[f.id]||"Disponível")==="Disponível";}).length;
+  return '<button class="voltar" data-nav="mapa">← Voltar</button><h1>Painel & Análise</h1>'
+    +'<div class="grid2" style="margin:12px 0">'
+      +'<div class="stat"><b style="color:#4a7c59">'+cfg.length+'</b><span>Fermentadores</span></div>'
+      +'<div class="stat" style="border-top-color:#c8860a"><b style="color:#c8860a">'+emProc+'</b><span>Em Processo</span></div>'
+      +'<div class="stat" style="border-top-color:#3d6b3d"><b style="color:#3d6b3d">'+disp+'</b><span>Disponíveis</span></div>'
+      +'<div class="stat" style="border-top-color:#5a7fa8"><b style="color:#5a7fa8">'+(S.estado.lotes||[]).length+'</b><span>Lotes registrados</span></div>'
+    +'</div>'
+    +blocoAnalise()
+    +'<p class="muted">Conectado como: '+esc(S.usuario||"—")+'</p>';
+}
+
+function blocoAnalise(){
+  var base=lotesAnalisaveis();
+  var h='<div class="secao"><div class="secaoTitulo" style="font-size:12px;font-weight:700;color:#8a7060;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px">Análise de dados (processo × resultado)</div>';
+  if(base.length<1){
+    h+='<p class="muted" style="margin:0">Ainda não há lotes com resultado de laudo. Registre o resultado (UFC/mL) e as leituras de pH/temperatura para o app analisar o que melhora o rendimento.</p></div>';
+    return h;
+  }
+  var ufcs=base.map(function(c){return c.ufc;}).sort(function(a,b){return a-b;});
+  var mediana=ufcs[Math.floor(ufcs.length/2)];
+  // Top (>= mediana) vs baixo (< mediana)
+  var top=base.filter(function(c){return c.ufc>=mediana;}), baixo=base.filter(function(c){return c.ufc<mediana;});
+  function medProp(arr,campo){ return media(arr.map(function(c){return c[campo];}).filter(function(v){return v!==null;})); }
+  var insights=[];
+  var phTop=medProp(top,"phMed"), phBx=medProp(baixo,"phMed");
+  var tTop=medProp(top,"tMed"), tBx=medProp(baixo,"tMed");
+  if(phTop!==null&&phBx!==null&&Math.abs(phTop-phBx)>=0.15) insights.push("Lotes com resultado acima da mediana tiveram pH médio "+phTop.toFixed(1)+" (vs "+phBx.toFixed(1)+" nos de menor resultado).");
+  if(tTop!==null&&tBx!==null&&Math.abs(tTop-tBx)>=0.5) insights.push("Melhores resultados com temperatura média "+tTop.toFixed(1)+"°C (vs "+tBx.toFixed(1)+"°C).");
+  var dentroTop=media(top.map(function(c){return c.phDentro;}).filter(function(v){return v!==null;}));
+  var dentroBx=media(baixo.map(function(c){return c.phDentro;}).filter(function(v){return v!==null;}));
+  if(dentroTop!==null&&dentroBx!==null&&dentroTop-dentroBx>=10) insights.push("Manter o pH dentro da faixa-alvo se associou a melhor resultado ("+Math.round(dentroTop)+"% na faixa nos melhores vs "+Math.round(dentroBx)+"% nos piores).");
+  var comOutros=base.filter(function(c){return /presente/i.test(c.outros);});
+  if(comOutros.length) insights.push(comOutros.length+" lote(s) com presença de outros microrganismos — verifique assepsia/temperatura desses casos.");
+
+  // Média de UFC por meio e por organismo
+  function agrupar(campo){
+    var g={};
+    base.forEach(function(c){ var k=c[campo]||"—"; (g[k]=g[k]||[]).push(c.ufc); });
+    return Object.keys(g).map(function(k){ return {k:k,n:g[k].length,m:media(g[k])}; }).sort(function(a,b){return b.m-a.m;});
+  }
+  var porMeio=agrupar("meio"), porOrg=agrupar("organismo");
+
+  if(insights.length){
+    h+='<div class="card" style="background:#f0f6f0;border-color:#cfe0cf;margin:0 0 10px"><b style="font-size:13px">🔎 Observações dos dados</b><ul style="margin:8px 0 0;padding-left:18px;font-size:13px;color:#3b2a1a">'
+      +insights.map(function(t){return '<li style="margin-bottom:4px">'+esc(t)+'</li>';}).join("")+'</ul></div>';
+  }
+  h+='<div class="muted" style="font-size:12px;margin-bottom:6px">Média de resultado (UFC/mL) por meio</div>';
+  h+=porMeio.map(function(g){return '<div class="row" style="border-bottom:1px solid #ede5d0;padding:6px 0"><span>'+esc(g.k)+' <span class="muted">('+g.n+')</span></span><b>'+fmtUFCnum(g.m)+'</b></div>';}).join("");
+  h+='<div class="muted" style="font-size:12px;margin:12px 0 6px">Média por organismo</div>';
+  h+=porOrg.map(function(g){return '<div class="row" style="border-bottom:1px solid #ede5d0;padding:6px 0"><span>'+esc(g.k)+' <span class="muted">('+g.n+')</span></span><b>'+fmtUFCnum(g.m)+'</b></div>';}).join("");
+
+  // Tabela por lote
+  h+='<div class="muted" style="font-size:12px;margin:14px 0 6px">Lotes analisados ('+base.length+')</div>';
+  base.slice().sort(function(a,b){return b.ufc-a.ufc;}).forEach(function(c){
+    var alerta=(c.phDentro!==null&&c.phDentro<70)||(c.tDentro!==null&&c.tDentro<70)||/presente/i.test(c.outros);
+    h+='<div class="card" style="margin:0 0 8px;border-left:5px solid '+(alerta?"#c8860a":"#4a7c59")+'">'
+      +'<div class="row"><b>'+esc(c.lote.loteNum||c.lote.id)+'</b><b>'+fmtUFCnum(c.ufc)+' UFC/mL</b></div>'
+      +'<div class="muted" style="margin-top:3px">'+esc(c.organismo)+' · '+esc(c.meio)+'</div>'
+      +'<div class="muted">pH '+(c.phMed!==null?c.phMed.toFixed(1):"—")+(c.phDentro!==null?' ('+c.phDentro+'% na faixa)':'')
+        +' · Temp '+(c.tMed!==null?c.tMed.toFixed(1)+"°":"—")+(c.tDentro!==null?' ('+c.tDentro+'% na faixa)':'')
+        +' · '+c.nMed+' leitura(s) · outros: '+esc(c.outros)+'</div>'
+    +'</div>';
+  });
+  h+='<button class="btn sec" id="btnCSV" style="margin-top:10px">⬇ Exportar dados (CSV)</button>';
+  h+='<p class="muted" style="font-size:11px;margin-top:6px">As faixas-alvo por organismo são referências gerais (editáveis no topo do Index.html). Envie o CSV para uma análise mais aprofundada.</p>';
+  h+='</div>';
+  return h;
+}
+
+function exportarCSV(){
+  var base=(S.estado.lotes||[]).map(consolidarLote);
+  var cols=["loteNum","fermentador","organismo","meio","inoculo","status","dtInicio","dtFim","horas","tempoPrevistoH","phMedio","phDentroFaixa%","tempMedia","tempDentroFaixa%","nLeituras","nAjustes","resultadoUFC","outrosMicrorganismos","faixaPh","faixaTemp"];
+  var linhas=[cols.join(";")];
+  base.forEach(function(c){
+    var l=c.lote;
+    var row=[l.loteNum||l.id,l.fermentador,c.organismo,c.meio,c.inoculo,c.status,l.dtInicio||"",l.dtFim||"",c.horas!=null?c.horas:"",l.tempoProducaoH||"",
+      c.phMed!=null?c.phMed.toFixed(2):"",c.phDentro!=null?c.phDentro:"",c.tMed!=null?c.tMed.toFixed(2):"",c.tDentro!=null?c.tDentro:"",
+      c.nMed,c.nAjustes,c.ufc!=null?c.ufc:"",c.outros,c.faixa.ph.join("-"),c.faixa.temp.join("-")];
+    linhas.push(row.map(function(v){ v=String(v==null?"":v); return /[;"\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }).join(";"));
+  });
+  var blob=new Blob(["﻿"+linhas.join("\n")],{type:"text/csv;charset=utf-8"});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement("a"); a.href=url; a.download="biofabrica-dados.csv"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); },4000);
+  toast("CSV exportado.");
+}
+
+function viewCadastros(){
+  var abas=[["organismos","Organismos"],["inoculos","Inóculos"],["meios","Meios de cultura"],["funcionarios","Funcionários"]];
+  var segs=abas.map(function(a){return '<button class="seg'+(S.cadAba===a[0]?" on":"")+'" data-cadaba="'+a[0]+'">'+a[1]+'</button>';}).join("");
+  var h='<button class="voltar" data-nav="mapa">← Voltar</button><h1>Cadastros</h1>'
+    +'<p class="sub2">O que for cadastrado aqui vira <b>lista de seleção</b> no lote — o operador escolhe, não digita.</p>'
+    +'<div class="segs">'+segs+'</div>';
+  h+= (S.cadAba==="funcionarios") ? cadFuncionarios() : cadCatalogo(S.cadAba);
+  return h;
+}
+
+function cadFuncionarios(){
+  var fs=(S.estado.funcionarios||[]);
+  var funcOpts=FUNCAO_OPT.map(function(o){return '<option>'+o+'</option>';}).join("");
+  var h='<div class="card"><div class="sec-title">Cadastrar funcionário</div>'
+    +field("Nome completo","fn_nome","","text","Ex: Luanna Antônio Santos")
+    +'<div class="field"><label>Função</label><select id="fn_funcao">'+funcOpts+'</select></div>'
+    +'<button class="btn green" id="btnAddFunc">＋ Cadastrar</button></div>';
+  if(!fs.length) h+='<div class="vazio">Nenhum funcionário cadastrado ainda.</div>';
+  fs.forEach(function(f){
+    h+='<div class="card" style="border-left:5px solid #4a7c59">'
+      +'<div class="row"><div><b>'+esc(f.nome)+'</b>'+(f.funcao?'<div class="muted">'+esc(f.funcao)+'</div>':'')+'</div>'
+      +'<button class="btn danger small" data-delfunc="'+f.id+'">Remover</button></div></div>';
+  });
+  return h;
+}
+
+function cadCatalogo(lista){
+  var tipo = lista==="inoculos"?"inoculo":lista==="meios"?"meio":"organismo";
+  var temReceita = (tipo!=="organismo");
+  var titulo = lista==="organismos"?"organismo":lista==="inoculos"?"inóculo":"meio de cultura";
+  var ph = lista==="organismos"?"Ex: Bacillus velezensis":(lista==="inoculos"?"Ex: Inóculo BAC":"Ex: Meio BAC");
+  var h='<div class="card"><div class="sec-title">Cadastrar '+titulo+'</div>'
+    +field("Nome","cat_nome","","text",ph)
+    +(temReceita?fieldArea("Receita / preparo","cat_receita","","Ingredientes, proporções e modo de preparo…"):"")
+    +(temReceita?fieldNum("Tempo de produção (horas)","cat_tempo","","Ex: 48"):"")
+    +'<button class="btn green" id="btnAddCat" data-tipo="'+tipo+'">＋ Cadastrar</button></div>';
+  var itens=(S.estado[lista]||[]);
+  if(!itens.length) h+='<div class="vazio">Nada cadastrado ainda.</div>';
+  itens.forEach(function(it){
+    h+='<div class="card" style="border-left:5px solid #6b4c20">'
+      +'<div class="row"><b>'+esc(it.nome)+'</b><button class="btn danger small" data-delcat="'+tipo+'|'+it.id+'">Remover</button></div>'
+      +(it.tempoHoras?'<div class="muted" style="margin-top:4px">⏱ Tempo de produção: '+esc(it.tempoHoras)+' h</div>':'')
+      +(it.receita?'<div class="muted" style="margin-top:6px;white-space:pre-wrap">'+esc(it.receita)+'</div>':'')
+    +'</div>';
+  });
+  return h;
+}
+
+function viewHistorico(){
+  var f=ferConfig(S.aFer); var ls=lotesDe(S.aFer).slice().reverse();
+  var h='<button class="voltar" data-nav="mapa">← Voltar ao mapa</button>'
+    +'<div class="row"><h1>Fermentador '+esc(S.aFer)+'</h1><span class="muted">'+Number(f.volume).toLocaleString("pt-BR")+' L</span></div>'
+    +'<button class="btn green" data-novo="'+S.aFer+'">+ Novo Lote</button><div style="height:12px"></div>';
+  if(!ls.length) h+='<div class="vazio">Nenhum lote registrado neste fermentador ainda.</div>';
+  ls.forEach(function(l){
+    var c=STATUS_COR[l.status]||STATUS_COR["Disponível"];
+    var nv=(S.estado.acoes||[]).filter(function(a){return a.loteId===l.id;}).length, na=ajustesDe(l.id).length;
+    h+='<div class="card" style="border-left:5px solid '+c.bd+'" data-abrir="'+S.aFer+'|'+l.id+'">'
+      +'<div class="row" style="margin-bottom:4px"><span class="muted" style="font-family:monospace">'+esc(l.loteNum||l.id)+'</span>'+badge(l.status)+'</div>'
+      +(l.produto?'<div style="font-weight:700;font-size:15px">'+esc(l.produto)+(l.microrganismo?' · '+esc(l.microrganismo):'')+'</div>':'')
+      +'<div class="muted" style="margin-top:4px">🗓 '+fmt(l.dtInicio)+(l.dtFim?' → '+fmt(l.dtFim):'')+'</div>'
+      +'<div class="muted">'+(l.resultadoQuantitativo?'🔬 '+esc(l.resultadoQuantitativo)+' · ':'')+'🧪 '+nv+' coleta(s)/vistoria(s) · ⚗️ '+na+' ajuste(s)</div>'
+    +'</div>';
+  });
+  return h;
+}
+
+function viewBuscar(){
+  var filtros=[["todos","Todos"]].concat(STATUS_OPT.map(function(s){return [s,s];}));
+  var chips=filtros.map(function(f){return '<button class="seg'+(S.buscaStatus===f[0]?" on":"")+'" data-bstatus="'+esc(f[0])+'">'+esc(f[1])+'</button>';}).join("");
+  return '<button class="voltar" data-nav="mapa">← Voltar</button><h1>Lotes</h1>'
+    +'<p class="sub2">Busque por código, produto ou organismo, e filtre por situação.</p>'
+    +'<div class="field"><input id="busca_q" value="'+esc(S.buscaQ)+'" placeholder="🔎 Buscar lote, produto, organismo…"></div>'
+    +'<div class="segs">'+chips+'</div>'
+    +'<div id="buscaResultados">'+buscaLista()+'</div>';
+}
+function buscaLista(){
+  var q=(S.buscaQ||"").trim().toLowerCase();
+  var lista=(S.estado.lotes||[]).filter(function(l){
+    if(S.buscaStatus!=="todos" && l.status!==S.buscaStatus) return false;
+    if(!q) return true;
+    return [l.loteNum,l.produto,l.microrganismo,l.fermentador,l.numeroRelatorio].some(function(v){ return String(v||"").toLowerCase().indexOf(q)>=0; });
+  });
+  // Mais recentes primeiro (por início).
+  lista=lista.slice().sort(function(a,b){ return String(b.dtInicio||"").localeCompare(String(a.dtInicio||"")); });
+  if(!lista.length) return '<div class="vazio">Nenhum lote encontrado.</div>';
+  return lista.map(function(l){
+    var c=STATUS_COR[l.status]||STATUS_COR["Disponível"];
+    return '<div class="card" style="border-left:5px solid '+c.bd+'" data-abrir="'+l.fermentador+'|'+l.id+'">'
+      +'<div class="row" style="margin-bottom:4px"><span class="muted" style="font-family:monospace">'+esc(l.loteNum||l.id)+'</span>'+badge(l.status)+'</div>'
+      +'<div style="font-weight:700">'+esc(l.produto||"—")+(l.microrganismo?' · '+esc(l.microrganismo):'')+'</div>'
+      +'<div class="muted" style="margin-top:2px">🏭 '+esc(l.fermentador)+' · 🗓 '+fmt(l.dtInicio)+(l.resultadoQuantitativo?' · 🔬 '+esc(l.resultadoQuantitativo):'')+'</div>'
+    +'</div>';
+  }).join("");
+}
+
+function viewVisitas(){
+  var vs=(S.estado.visitas||[]).slice().reverse();
+  var objOpts=OBJ_VISITA.map(function(o){return '<option>'+o+'</option>';}).join("");
+  var h='<button class="voltar" data-nav="mapa">← Voltar</button><h1>Visitas / Acessos</h1>'
+    +'<p class="sub2">Registro geral de acesso à biofábrica. Dentro de cada visita, registre as coletas e vistorias feitas.</p>'
+    +'<div class="card"><div class="sec-title">Registrar visita</div>'
+    +selNomes("Funcionário","gv_func",nomesFunc(),"")
+    +'<div class="field"><label>Objetivo geral</label><select id="gv_obj">'+objOpts+'</select></div>'
+    +field("Entrada","gv_ent",nowDT(),"datetime-local")
+    +field("Saída (vazio se ainda presente)","gv_sai","","datetime-local")
+    +'<button class="btn green" id="btnAddVisitaG">✅ Registrar visita</button></div>';
+  if(!vs.length) h+='<div class="vazio">Nenhuma visita registrada.</div>';
+  vs.forEach(function(v){
+    var aberta=!v.dtSaida; var n=acoesDe(v.id).length;
+    var min = v.dtEntrada&&v.dtSaida ? Math.round((new Date(v.dtSaida)-new Date(v.dtEntrada))/60000) : null;
+    h+='<div class="card" style="border-left:5px solid '+(aberta?"#c8860a":"#4a7c59")+'">'
+      +'<div class="row"><b>'+esc(v.funcionario)+'</b><span class="badge" style="background:'+(aberta?"#fef8e7":"#eaf5ea")+';color:'+(aberta?"#8a5c00":"#2d5c3a")+';border-color:'+(aberta?"#c8860a":"#4a7c59")+'">'+(aberta?"● Na biofábrica":"✓ Encerrada")+'</span></div>'
+      +'<div class="muted" style="margin:4px 0">'+esc(v.objetivo)+'</div>'
+      +'<div class="muted">🚪 '+fmt(v.dtEntrada)+(v.dtSaida?' · 🚶 '+fmt(v.dtSaida):'')+(min!==null?' · ⏱ '+(min>=60?Math.floor(min/60)+"h "+(min%60)+"min":min+" min"):'')+'</div>'
+      +'<div class="muted">🧪 '+n+' coleta(s)/vistoria(s)</div>'
+      +'<div class="btn-row" style="margin-top:8px">'
+        +'<button class="btn small" data-abrirvisita="'+v.id+'">Abrir / registrar ações</button>'
+        +(aberta?'<button class="btn sec small" data-saidav="'+v.id+'">Registrar saída</button>':'')
+        +'<button class="btn danger small" data-delvisitag="'+v.id+'">Remover</button>'
+      +'</div></div>';
+  });
+  return h;
+}
+
+function viewVisitaDetalhe(){
+  var v=visitaAtual(); if(!v) return '<div class="vazio">Visita não encontrada.</div>';
+  var acs=acoesDe(v.id).slice().reverse();
+  var aberta=!v.dtSaida;
+  var tipoOpts=TIPO_ACAO.map(function(t){return '<option>'+t+'</option>';}).join("");
+  var ferOpts=(S.estado.config||[]).map(function(f){return '<option>'+f.id+'</option>';}).join("");
+  var ferIni=(S.estado.config&&S.estado.config[0])?S.estado.config[0].id:"";
+  var h='<button class="voltar" data-nav="visitas">← Visitas</button>'
+    +'<div class="row"><h1>'+esc(v.funcionario)+'</h1><span class="badge" style="background:'+(aberta?"#fef8e7":"#eaf5ea")+';color:'+(aberta?"#8a5c00":"#2d5c3a")+';border-color:'+(aberta?"#c8860a":"#4a7c59")+'">'+(aberta?"● Na biofábrica":"✓ Encerrada")+'</span></div>'
+    +'<p class="muted">'+esc(v.objetivo)+' · 🚪 '+fmt(v.dtEntrada)+(v.dtSaida?' · 🚶 '+fmt(v.dtSaida):'')+'</p>'
+    +(aberta?'<button class="btn sec" data-saidav="'+v.id+'">🚶 Registrar saída</button>':'')
+    +'<div class="card" style="margin-top:12px"><div class="sec-title">Registrar coleta / vistoria</div>'
+    +'<div class="field"><label>Tipo</label><select id="ac_tipo">'+tipoOpts+'</select></div>'
+    +'<div class="field"><label>Fermentador</label><select id="ac_fer">'+ferOpts+'</select></div>'
+    +'<div class="field"><label>Lote (opcional)</label><select id="ac_lote">'+optionsLotesFer(ferIni)+'</select></div>'
+    +field("Data/Hora","ac_dt",nowDT(),"datetime-local")
+    +fieldArea("Observação","ac_obs","","O que foi coletado/vistoriado, condição observada…")
+    +'<button class="btn green" id="btnAddAcao">＋ Registrar</button></div>';
+  if(!acs.length) h+='<div class="vazio">Nenhuma coleta/vistoria nesta visita.</div>';
+  acs.forEach(function(a){
+    var cor=a.tipo==="Coleta"?"#5a7fa8":"#4a7c59";
+    h+='<div class="card" style="border-left:5px solid '+cor+'">'
+      +'<div class="row"><b style="color:'+cor+'">'+esc(a.tipo)+' · '+esc(a.fermentador||"—")+'</b><button class="btn danger small" data-delacao="'+a.id+'">Remover</button></div>'
+      +'<div class="muted" style="margin-top:4px">🕐 '+fmt(a.dt)+(a.loteId?' · 🧫 '+esc(nomeFer(a.loteId)):'')+'</div>'
+      +(a.obs?'<div class="muted">📝 '+esc(a.obs)+'</div>':'')
+    +'</div>';
+  });
+  return h;
+}
+
+function optionsLotesFer(ferId){
+  var o='<option value="">— nenhum —</option>';
+  (S.estado.lotes||[]).filter(function(l){return l.fermentador===ferId;}).forEach(function(l){
+    o+='<option value="'+l.id+'">'+esc(l.loteNum||l.id)+'</option>';
+  });
+  return o;
+}
+
+function viewLote(){
+  var l=loteAtual(); if(!l) return '<div class="vazio">Lote não encontrado.</div>';
+  var SECS=[["ficha","📄 Ficha"],["monitor","📈 Parâmetros"],["ajustes","⚗️ Ajustes"],["relatorio","🔬 Relatório"],["fotos","📷 Fotos"],["laudo","📤 Laudo"]];
+  var segs=SECS.map(function(s){return '<button class="seg'+(S.secao===s[0]?" on":"")+'" data-sec="'+s[0]+'">'+s[1]+'</button>';}).join("");
+  var h=datalistFuncionarios()
+    +'<button class="voltar" data-hist="'+S.aFer+'">← '+esc(S.aFer)+' — Histórico</button>'
+    +'<div class="row"><h1 style="font-family:monospace;font-size:16px">'+esc(l.loteNum||l.id)+'</h1>'+badge(l.status)+'</div>'
+    +(countdownHtml(l)?'<div class="cdbar">'+progressoHtml(l)+countdownHtml(l)+'</div>':'')
+    +'<div style="height:8px"></div><div class="segs">'+segs+'</div>';
+  if(S.secao==="ficha") h+=secFicha(l);
+  else if(S.secao==="monitor") h+=secMonitor(l);
+  else if(S.secao==="ajustes") h+=secAjustes(l);
+  else if(S.secao==="relatorio") h+=secRelatorio(l);
+  else if(S.secao==="fotos") h+=secFotos(l);
+  else if(S.secao==="laudo") h+=secLaudo(l);
+  return h;
+}
+
+function secFicha(l){
+  var stOpts=STATUS_OPT.map(function(s){return '<option'+(s===l.status?" selected":"")+'>'+s+'</option>';}).join("");
+  var recInoc=receitaDe("inoculos",l.inoculo), recMeio=receitaDe("meios",l.meio);
+  return '<div class="card"><div class="sec-title">Identificação do produto</div>'
+    +field("Nº do Lote (interno)","f_loteNum",l.loteNum)
+    +'<div class="field"><label>Status</label><select id="f_status">'+stOpts+'</select></div>'
+    +field("Nome do produto","f_produto",l.produto,"text","Ex: Solu Leaf")
+    +selNomes("Organismo (microrganismo)","f_microrganismo",nomesOrg(),l.microrganismo)
+    +selNomes("Inóculo","f_inoculo",nomesInoc(),l.inoculo,' data-rec="inoculos|f_inoc_rec"')
+    +'<p class="muted receita" id="f_inoc_rec">'+(recInoc?"Receita: "+esc(recInoc):"")+'</p>'
+    +selNomes("Meio de cultura","f_meio",nomesMeio(),l.meio,' data-rec="meios|f_meio_rec"')
+    +'<p class="muted receita" id="f_meio_rec">'+(recMeio?"Receita: "+esc(recMeio):"")+'</p>'
+    +field("Lote do produto","f_loteProduto",l.loteProduto,"text","Ex: PA00130034")
+    +field("Lote do meio de cultura","f_loteMeio",l.loteMeio,"text","Ex: PA00180174")
+    +'<p class="muted" style="margin:0">Não achou na lista? Cadastre em <b>Cadastros</b> (no mapa).</p>'
+    +'</div>'
+    +'<div class="card"><div class="sec-title">Processo</div>'
+    +field("Data/Hora de início","f_dtInicio",l.dtInicio,"datetime-local")
+    +fieldNum("Tempo de produção (horas)","f_tempoH",l.tempoProducaoH,"vem da receita")
+    +(countdownHtml(l)?'<div class="cdbar" style="margin-bottom:12px">'+countdownHtml(l)+'</div>':'')
+    +field("Data/Hora de fim","f_dtFim",l.dtFim,"datetime-local")
+    +'<div class="grid2">'+field("Temperatura","f_temperatura",l.temperatura,"text","Ex: 30 ou N/A")+field("pH","f_ph",l.ph,"text","Ex: 6.5 ou N/A")+'</div>'
+    +'<div class="grid2">'+fieldNum("Volume inicial (L)","f_volIni",l.volumeInicial)+fieldNum("Volume final (L)","f_volFim",l.volumeFinal)+'</div>'
+    +selNomes("Operador responsável","f_operador",nomesFunc(),l.operador)
+    +fieldArea("Observações gerais","f_obs",l.obs,"Intercorrências, condições do ambiente…")
+    +'</div>'
+    +'<button class="btn" id="btnSalvarFicha">💾 Salvar Ficha</button>'
+    +'<button class="btn green" id="btnFinalizar" style="margin-top:8px">🏁 Finalizar produção → Laudo</button>'
+    +'<button class="btn danger" id="btnExcluir" style="margin-top:8px">🗑 Excluir Lote</button>';
+}
+
+function secVisitas(l){
+  var vs=visitasDe(l.id).slice().reverse();
+  var objOpts=OBJ_VISITA.map(function(o){return '<option>'+o+'</option>';}).join("");
+  var h='<div class="card"><div class="sec-title">Registrar visita / acesso</div>'
+    +selNomes("Nome do funcionário","v_func",nomesFunc(),"")
+    +'<div class="field"><label>Objetivo</label><select id="v_obj">'+objOpts+'</select></div>'
+    +field("Entrada","v_ent",nowDT(),"datetime-local")
+    +field("Saída (vazio se ainda presente)","v_sai","","datetime-local")
+    +'<button class="btn green" id="btnAddVisita">✅ Registrar visita</button></div>';
+  if(!vs.length) h+='<div class="vazio">Nenhuma visita registrada.</div>';
+  vs.forEach(function(v){
+    var aberta=!v.dtSaida;
+    h+='<div class="card" style="border-left:5px solid '+(aberta?"#c8860a":"#4a7c59")+'">'
+      +'<div class="row"><b>'+esc(v.funcionario)+'</b><span class="badge" style="background:'+(aberta?"#fef8e7":"#eaf5ea")+';color:'+(aberta?"#8a5c00":"#2d5c3a")+';border-color:'+(aberta?"#c8860a":"#4a7c59")+'">'+(aberta?"● Em visita":"✓ Encerrada")+'</span></div>'
+      +'<div class="muted" style="margin:4px 0">'+esc(v.objetivo)+'</div>'
+      +'<div class="muted">🚪 '+fmt(v.dtEntrada)+(v.dtSaida?' · 🚶 '+fmt(v.dtSaida):'')+'</div>'
+      +'<div class="btn-row" style="margin-top:8px">'
+        +(aberta?'<button class="btn sec small" data-saida="'+v.id+'">Registrar saída</button>':'')
+        +'<button class="btn danger small" data-delvisita="'+v.id+'">Remover</button>'
+      +'</div></div>';
+  });
+  return h;
+}
+
+function secMonitor(l){
+  var fx=faixaDe(l.microrganismo);
+  var meds=medicoesDe(l.id).slice().reverse();
+  var c=consolidarLote(l);
+  var h='<div class="card"><div class="sec-title">Registrar leitura de parâmetros</div>'
+    +'<p class="muted" style="margin-top:0">Faixa-alvo p/ '+esc(l.microrganismo||"organismo")+': pH '+fx.ph[0]+'–'+fx.ph[1]+' · Temp '+fx.temp[0]+'–'+fx.temp[1]+' °C</p>'
+    +field("Data/Hora","md_dt",nowDT(),"datetime-local")
+    +'<div class="grid2">'+fieldNum("pH","md_ph","","Ex: 6.8","0.1")+fieldNum("Temperatura (°C)","md_temp","","Ex: 32","0.1")+'</div>'
+    +'<div class="grid2">'+fieldNum("O₂ dissolvido (%)","md_o2","")+fieldNum("Agitação (rpm)","md_agit","")+'</div>'
+    +field("Observação","md_obs","")
+    +'<button class="btn green" id="btnAddMed">＋ Registrar leitura</button></div>';
+  if(meds.length){
+    h+='<div class="card"><div class="sec-title">Resumo</div>'
+      +'<div class="grid2">'
+        +'<div class="stat" style="border-top-color:'+(c.phDentro>=70?"#4a7c59":"#c8860a")+'"><b style="font-size:20px">'+(c.phMed!==null?c.phMed.toFixed(1):"—")+'</b><span>pH médio'+(c.phDentro!==null?' · '+c.phDentro+'% na faixa':'')+'</span></div>'
+        +'<div class="stat" style="border-top-color:'+(c.tDentro>=70?"#4a7c59":"#c8860a")+'"><b style="font-size:20px">'+(c.tMed!==null?c.tMed.toFixed(1)+"°":"—")+'</b><span>Temp média'+(c.tDentro!==null?' · '+c.tDentro+'% na faixa':'')+'</span></div>'
+      +'</div></div>';
+  }
+  if(!meds.length) h+='<div class="vazio">Nenhuma leitura registrada. Registre pH e temperatura ao longo do processo para analisar o controle.</div>';
+  meds.forEach(function(m){
+    var pv=num(m.ph), tv=num(m.temperatura);
+    var phOk=pv===null||(pv>=fx.ph[0]&&pv<=fx.ph[1]); var tOk=tv===null||(tv>=fx.temp[0]&&tv<=fx.temp[1]);
+    h+='<div class="card" style="border-left:5px solid '+((phOk&&tOk)?"#4a7c59":"#c8860a")+'">'
+      +'<div class="row"><b>'+fmt(m.dt)+'</b><button class="btn danger small" data-delmed="'+m.id+'">Remover</button></div>'
+      +'<div class="muted" style="margin-top:4px">'
+        +'pH '+(m.ph!==""&&m.ph!=null?esc(m.ph)+(phOk?"":" ⚠"):"—")
+        +' · Temp '+(m.temperatura!==""&&m.temperatura!=null?esc(m.temperatura)+"°"+(tOk?"":" ⚠"):"—")
+        +(m.oxigenio?' · O₂ '+esc(m.oxigenio)+'%':'')
+        +(m.agitacao?' · '+esc(m.agitacao)+' rpm':'')+'</div>'
+      +(m.obs?'<div class="muted">📝 '+esc(m.obs)+'</div>':'')
+    +'</div>';
+  });
+  return h;
+}
+
+function secAjustes(l){
+  var as=ajustesDe(l.id).slice().reverse();
+  var tipoOpts=TIPO_AJUSTE.map(function(t){return '<option>'+t+'</option>';}).join("");
+  var h='<div class="card"><div class="sec-title">Registrar ajuste de processo</div>'
+    +'<div class="field"><label>Tipo</label><select id="a_tipo">'+tipoOpts+'</select></div>'
+    +field("Data/Hora","a_dt",nowDT(),"datetime-local")
+    +field("Valor / descrição","a_valor","","text","Ex: pH 6.8 · 50 mL")
+    +selNomes("Operador","a_op",nomesFunc(),"")
+    +field("Produto utilizado","a_prod","","text","Ex: H₂SO₄, antiespuma")
+    +field("Observação","a_obs","")
+    +'<button class="btn green" id="btnAddAjuste">Salvar ajuste</button></div>';
+  if(!as.length) h+='<div class="vazio">Nenhum ajuste registrado.</div>';
+  as.forEach(function(a){
+    h+='<div class="card" style="border-left:5px solid #6b4c20">'
+      +'<div class="row"><b>'+esc(a.tipo)+' → '+esc(a.valor)+'</b><button class="btn danger small" data-delajuste="'+a.id+'">Remover</button></div>'
+      +'<div class="muted" style="margin-top:4px">🕐 '+fmt(a.dt)+' · 👤 '+esc(a.operador)+(a.produto?' · 🧪 '+esc(a.produto):'')+'</div>'
+      +(a.obs?'<div class="muted">📝 '+esc(a.obs)+'</div>':'')
+    +'</div>';
+  });
+  return h;
+}
+
+function secRelatorio(l){
+  return '<div class="card"><div class="sec-title">Dados da amostra</div>'
+    +'<div class="grid2">'+field("Nº do relatório","r_num",l.numeroRelatorio,"text","Ex: 004")+field("Data de emissão","r_emissao",l.dataEmissao,"date")+'</div>'
+    +field("Cliente / Fazenda","r_cliente",l.cliente||CLIENTE_PADRAO)
+    +fieldSel("Tipo de amostra","r_tipoAmostra",TIPO_AMOSTRA,l.tipoAmostra||"Multiplicado")
+    +field("Se \"Outro\", qual?","r_tipoOutro",l.tipoAmostraOutro,"text","")
+    +fieldSel("Meio de cultura","r_meio",MEIO_CULTURA,l.meioCultura||"BAC")
+    +fieldSel("Tipo de compressor","r_compressor",TIPO_COMPRESSOR,l.tipoCompressor||"Radial")
+    +field("Nome do produto","r_produto",l.produto,"text","Ex: Solu Leaf")
+    +selNomes("Microrganismo","r_micro",nomesOrg(),l.microrganismo)
+    +field("Lote do produto","r_loteProd",l.loteProduto,"text","Ex: PA00130034")
+    +field("Lote meio de cultura","r_loteMeioCult",l.loteMeio,"text","Ex: PA00180174")
+    +'<div class="grid2">'+field("Temperatura","r_tempAmostra",l.temperatura,"text","Ex: 30 ou N/A")+field("pH","r_phAmostra",l.ph,"text","Ex: 6.5 ou N/A")+'</div>'
+    +'<div class="grid2">'+field("Data da multiplicação","r_dtMult",l.dataMultiplicacao,"date")+field("Data da coleta","r_dtColeta",l.dataColeta,"date")+'</div>'
+    +selNomes("Responsável pela coleta","r_respColeta",nomesFunc(),l.responsavelColeta)
+    +fieldArea("Outras informações","r_outras",l.outrasInformacoes,"Ex: análise qualitativa por microscopia…")
+    +'<p class="muted" style="margin:0">Estes campos também aparecem na Ficha — preencher aqui ou lá dá no mesmo.</p>'
+    +'</div>'
+    +'<div class="card"><div class="sec-title">Dados da análise</div>'
+    +'<div class="grid2">'+field("Data de recebimento","r_dtReceb",l.dataRecebimento,"date")+field("Data da análise","r_dtAnalise",l.dataAnalise,"date")+'</div>'
+    +field("Técnica de plaqueamento","r_tecnica",l.tecnicaPlaqueamento,"text","Spread plate")
+    +field("Diluições plaqueadas","r_diluicoes",l.diluicoesPlaqueadas,"text","10-3 , 10-4 e 10-5")
+    +'<div class="grid2">'+field("Temp. de incubação","r_tempInc",l.tempIncubacao,"text","30±02 °C")+field("Tempo de incubação","r_tempoInc",l.tempoIncubacao,"text","24 a 48 h")+'</div>'
+    +'<div class="grid2">'+fieldSel("Choque térmico","r_choque",SIM_NAO,l.choqueTermico||"Sim")+fieldSel("Coloração de Gram","r_gram",GRAM_OPT,l.coloracaoGram||"Sim")+'</div>'
+    +selNomes("Responsável pela análise","r_respAnalise",nomesFunc(),l.responsavelAnalise)
+    +'</div>'
+    +'<div class="card"><div class="sec-title">Resultados</div>'
+    +field("Microrganismo de interesse — com choque térmico (UFC/mL)","r_quant",l.resultadoQuantitativo,"text","Ex: 1×10⁹")
+    +fieldSel("Presença de outros microrganismos","r_outros",OUTROS_MICRO,l.outrosMicrorganismos)
+    +'<p class="muted" style="margin:0">BC = baixa contagem (não atingiu 30–300 colônias).</p>'
+    +'</div>'
+    +'<button class="btn" id="btnSalvarRelatorio">💾 Salvar Relatório</button>';
+}
+
+function secFotos(l){
+  var fs=fotosDe(l.id).slice().reverse();
+  var catOpts=FOTO_CAT.map(function(c){return '<option>'+c+'</option>';}).join("");
+  var h='<div class="card"><div class="sec-title">Adicionar foto</div>'
+    +'<div class="field"><label>Categoria</label><select id="foto_cat">'+catOpts+'</select></div>'
+    +'<input type="file" id="fotoInput" accept="image/*" capture="environment" style="display:none">'
+    +'<button class="btn green" id="btnFoto">📷 Tirar / escolher foto</button>'
+    +'<p class="muted" style="margin-top:8px">As fotos entram no PDF do laudo (placas de diluição, microscopia/Gram).</p></div>';
+  if(!fs.length) h+='<div class="vazio">Nenhuma foto adicionada.</div>';
+  else {
+    h+='<div class="fotogrid">';
+    fs.forEach(function(ft){
+      h+='<div class="fotocard"><img src="'+thumbUrl(ft.fileId)+'" alt=""><div class="row"><span class="muted">'+esc(ft.categoria||"Foto")+'</span><button class="btn danger small" data-delfoto="'+ft.id+'">✕</button></div></div>';
+    });
+    h+='</div>';
+  }
+  return h;
+}
+
+function secLaudo(l){
+  return '<div class="card"><div class="sec-title">Laudo (Relatório de Análise)</div>'
+    +'<pre class="laudo" id="laudoTxt">'+esc(montarLaudo(l))+'</pre>'
+    +'<p class="muted" style="margin-top:8px">Gerado a partir da aba <b>Relatório</b>. Preencha os campos lá para completar o laudo.</p></div>'
+    +'<div class="card"><div class="sec-title">Enviar por WhatsApp</div>'
+    +'<div class="field"><label>Número (opcional, com DDD)</label><input id="wa_num" type="tel" inputmode="numeric" placeholder="Ex: 55 64 99999-9999"></div>'
+    +'<p class="muted" style="margin:0 0 8px">Deixe em branco para escolher o contato na hora do envio.</p>'
+    +'<button class="btn wa" id="btnWhats">📤 Enviar laudo (texto) no WhatsApp</button>'
+    +'<button class="btn sec" id="btnCopiar" style="margin-top:8px">📋 Copiar texto do laudo</button></div>'
+    +'<div class="card"><div class="sec-title">Laudo em PDF (com fotos)</div>'
+    +'<p class="muted" style="margin:0 0 8px">Gera o PDF no formato do documento oficial, incluindo as fotos anexadas.</p>'
+    +'<button class="btn wa" id="btnPdfWhats">📄 Enviar PDF no WhatsApp</button>'
+    +'<button class="btn sec" id="btnVerPdf" style="margin-top:8px">👁 Ver / baixar PDF</button></div>';
+}
+
+// ─── LAUDO (texto no formato do relatório oficial) ─────────────────
+function montarLaudo(l){
+  var f=ferConfig(l.fermentador); var L=[];
+  L.push("*"+LAUDO_TITULO+"*");
+  if(LAUDO_ENDERECO) L.push(LAUDO_ENDERECO);
+  if(LAUDO_CONTATO) L.push("Contato: "+LAUDO_CONTATO);
+  L.push("");
+  L.push("*Nº do Relatório:* "+(l.numeroRelatorio||"—")+"    *Emissão:* "+(l.dataEmissao?fmtDate(l.dataEmissao):"—"));
+  L.push("");
+  L.push("*DADOS DA AMOSTRA*");
+  L.push("Cliente/Fazenda: "+(l.cliente||CLIENTE_PADRAO));
+  L.push("Tipo de amostra: "+(l.tipoAmostra||"—")+(l.tipoAmostra==="Outro"&&l.tipoAmostraOutro?" ("+l.tipoAmostraOutro+")":""));
+  L.push("Meio de cultura: "+(l.meioCultura||"—"));
+  L.push("Tipo de compressor: "+(l.tipoCompressor||"—"));
+  L.push("Nome do produto: "+(l.produto||"—"));
+  L.push("Microrganismo: "+(l.microrganismo||"—"));
+  L.push("Lote do produto: "+(l.loteProduto||"—"));
+  L.push("Lote meio de cultura: "+(l.loteMeio||"—"));
+  L.push("Temperatura: "+(l.temperatura||"N/A")+"    pH: "+(l.ph||"N/A"));
+  L.push("Fermentador: "+l.fermentador+" ("+Number(f.volume).toLocaleString("pt-BR")+" L)");
+  L.push("Data da multiplicação: "+(l.dataMultiplicacao?fmtDate(l.dataMultiplicacao):"—"));
+  L.push("Data da coleta: "+(l.dataColeta?fmtDate(l.dataColeta):"—"));
+  L.push("Responsável pela coleta: "+(l.responsavelColeta||"—"));
+  if(l.outrasInformacoes) L.push("Outras informações: "+l.outrasInformacoes);
+  L.push("");
+  L.push("*DADOS DA ANÁLISE*");
+  L.push("Data de recebimento: "+(l.dataRecebimento?fmtDate(l.dataRecebimento):"—"));
+  L.push("Data da análise: "+(l.dataAnalise?fmtDate(l.dataAnalise):"—"));
+  L.push("Técnica de plaqueamento: "+(l.tecnicaPlaqueamento||"Spread plate"));
+  L.push("Diluições plaqueadas: "+(l.diluicoesPlaqueadas||"10-3 , 10-4 e 10-5"));
+  L.push("Temperatura de incubação: "+(l.tempIncubacao||"30±02 °C"));
+  L.push("Tempo de incubação: "+(l.tempoIncubacao||"24 a 48 h"));
+  L.push("Choque térmico: "+(l.choqueTermico||"—"));
+  L.push("Coloração de Gram: "+(l.coloracaoGram||"—"));
+  L.push("Responsável: "+(l.responsavelAnalise||"—"));
+  L.push("");
+  L.push("*RESULTADOS (UFC/mL)*");
+  var conc=l.resultadoQuantitativo||"";
+  if(conc && !/ufc/i.test(conc)) conc=conc+" UFC/mL";
+  L.push("Microrganismo de interesse (com choque térmico): "+(conc||"—"));
+  L.push("Presença de outros microrganismos: "+(l.outrosMicrorganismos||"—"));
+  L.push("");
+  L.push("*CONSIDERAÇÕES*");
+  LAUDO_CONSIDERACOES.forEach(function(c){ L.push("• "+c); });
+  L.push("");
+  L.push("_Fazenda Água Viva · BioFábrica_");
+  return L.join("\n");
+}
+
+function enviarWhats(l){
+  var texto=montarLaudo(l);
+  var num=(val("wa_num")||"").replace(/\D/g,"");
+  var base= num ? "https://wa.me/"+num : "https://wa.me/";
+  window.open(base+"?text="+encodeURIComponent(texto),"_blank");
+}
+
+// ─── AÇÕES ─────────────────────────────────────────────────────────
+function novoLote(ferId){
+  var d=new Date();
+  var loteNum=ferId+"-"+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+"-"+makeId().slice(0,4);
+  var lote={ id:makeId(), fermentador:ferId, loteNum:loteNum, status:"Em Processo",
+    produto:"",microrganismo:"",loteProduto:"",loteMeio:"",temperatura:"",ph:"",
+    dtInicio:nowDT(),dtFim:"",volumeInicial:"",volumeFinal:"",operador:"",obs:"",
+    numeroRelatorio:proximoNumeroRelatorio(),dataEmissao:nowDate(),cliente:CLIENTE_PADRAO,tipoAmostra:"Multiplicado",
+    tipoAmostraOutro:"",meioCultura:"BAC",tipoCompressor:"Radial",dataMultiplicacao:"",dataColeta:"",
+    responsavelColeta:"",outrasInformacoes:"",
+    dataRecebimento:"",dataAnalise:"",tecnicaPlaqueamento:"Spread plate",diluicoesPlaqueadas:"10-3 , 10-4 e 10-5",
+    tempIncubacao:"30±02 °C",tempoIncubacao:"24 a 48 h",choqueTermico:"Sim",coloracaoGram:"Sim",responsavelAnalise:"",
+    resultadosQualitativos:"",outrosMicrorganismos:"",resultadoQuantitativo:"",
+    inoculo:"",meio:"",tempoProducaoH:"",
+    criadoPor:"",criadoEm:"",atualizadoEm:"" };
+  overlay(true);
+  Promise.all([ api.salvarLote(lote), api.setFermentadorStatus(ferId,"Em Processo") ]).then(function(res){
+    var salvo=res[0]||lote;
+    S.estado.lotes.push(salvo); S.estado.fermentadores[ferId]="Em Processo";
+    S.aFer=ferId; S.aLoteId=salvo.id; S.secao="ficha"; S.view="lote";
+    overlay(false); render(); toast("Lote criado.");
+  }).catch(function(){ overlay(false); toast("Erro ao criar lote","err"); });
+}
+
+function coletarFicha(l){
+  Object.assign(l,{ loteNum:val("f_loteNum"), status:val("f_status"), produto:val("f_produto"),
+    microrganismo:val("f_microrganismo"), inoculo:val("f_inoculo"), meio:val("f_meio"),
+    tempoProducaoH:val("f_tempoH"), loteProduto:val("f_loteProduto"), loteMeio:val("f_loteMeio"),
+    dtInicio:val("f_dtInicio"), dtFim:val("f_dtFim"), temperatura:val("f_temperatura"), ph:val("f_ph"),
+    volumeInicial:val("f_volIni"), volumeFinal:val("f_volFim"), operador:val("f_operador"), obs:val("f_obs") });
+}
+function salvarFicha(){
+  var l=loteAtual(); if(!l) return;
+  coletarFicha(l);
+  persistLote(l,"Ficha salva.");
+}
+function finalizarProducao(){
+  var l=loteAtual(); if(!l) return;
+  coletarFicha(l);
+  var faltam=[];
+  if(!l.produto || !l.produto.trim()) faltam.push("Nome do produto");
+  if(!l.microrganismo || !l.microrganismo.trim()) faltam.push("Organismo");
+  if(faltam.length){ toast("Preencha antes de finalizar: "+faltam.join(", "),"err"); return; }
+  if(!l.dtFim) l.dtFim=nowDT();          // data final = agora, se ainda não preenchida
+  if(l.status==="Em Processo") l.status="Aguardando Análise";
+  S.estado.fermentadores[l.fermentador]=l.status;
+  S.secao="relatorio";                    // segue direto para o laudo
+  persistLote(l,"Produção finalizada. Preencha o laudo.");
+}
+
+function coletarRelatorio(l){
+  Object.assign(l,{
+    produto:val("r_produto"), microrganismo:val("r_micro"), loteProduto:val("r_loteProd"),
+    loteMeio:val("r_loteMeioCult"), temperatura:val("r_tempAmostra"), ph:val("r_phAmostra"),
+    numeroRelatorio:val("r_num"), dataEmissao:val("r_emissao"), cliente:val("r_cliente"),
+    tipoAmostra:val("r_tipoAmostra"), tipoAmostraOutro:val("r_tipoOutro"), meioCultura:val("r_meio"),
+    tipoCompressor:val("r_compressor"), dataMultiplicacao:val("r_dtMult"), dataColeta:val("r_dtColeta"),
+    responsavelColeta:val("r_respColeta"), outrasInformacoes:val("r_outras"),
+    dataRecebimento:val("r_dtReceb"), dataAnalise:val("r_dtAnalise"), tecnicaPlaqueamento:val("r_tecnica"),
+    diluicoesPlaqueadas:val("r_diluicoes"), tempIncubacao:val("r_tempInc"), tempoIncubacao:val("r_tempoInc"),
+    choqueTermico:val("r_choque"), coloracaoGram:val("r_gram"), responsavelAnalise:val("r_respAnalise"),
+    outrosMicrorganismos:val("r_outros"), resultadoQuantitativo:val("r_quant")
+  });
+}
+function salvarRelatorio(){
+  var l=loteAtual(); if(!l) return;
+  coletarRelatorio(l);
+  persistLote(l,"Relatório salvo.");
+}
+
+function persistLote(l,msg){
+  overlay(true);
+  api.salvarLote(l).then(function(salvo){
+    Object.assign(l,salvo||{});
+    if(l.status && l.status!=="Em Processo") S.estado.fermentadores[l.fermentador]=l.status;
+    limparRascunho(l.id);
+    overlay(false); render(); toast(msg||"Salvo.");
+  }).catch(function(){ overlay(false); toast("Erro ao salvar","err"); });
+}
+
+// ── Visitas (acesso geral à biofábrica) ──
+function addVisitaGlobal(){
+  var func=val("gv_func").trim(); if(!func){ toast("Selecione o funcionário.","err"); return; }
+  var v={ id:makeId(), loteId:"", funcionario:func, objetivo:val("gv_obj"), dtEntrada:val("gv_ent"), dtSaida:val("gv_sai") };
+  overlay(true);
+  api.addVisita(v).then(function(){ S.estado.visitas.push(v); S.aVisitaId=v.id; S.view="visita"; overlay(false); render(); toast("Visita registrada."); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function registrarSaida(id){
+  var v=(S.estado.visitas||[]).find(function(x){return x.id===id;}); if(!v) return; v.dtSaida=nowDT();
+  overlay(true);
+  api.atualizarVisita(v).then(function(){ overlay(false); render(); toast("Saída registrada."); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function delVisita(id){
+  if(!confirm("Remover esta visita e suas coletas/vistorias?")) return;
+  overlay(true);
+  api.excluirVisita(id).then(function(){
+    S.estado.visitas=S.estado.visitas.filter(function(x){return x.id!==id;});
+    S.estado.acoes=(S.estado.acoes||[]).filter(function(x){return x.visitaId!==id;});
+    if(S.view==="visita") S.view="visitas";
+    overlay(false); render();
+  }).catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function addAcao(){
+  var v=visitaAtual(); if(!v) return;
+  var a={ id:makeId(), visitaId:v.id, tipo:val("ac_tipo"), fermentador:val("ac_fer"), loteId:val("ac_lote"), dt:val("ac_dt"), obs:val("ac_obs") };
+  overlay(true);
+  api.addAcao(a).then(function(){
+    S.estado.acoes.push(a);
+    // Coleta ligada a um lote alimenta o laudo (responsável e data da coleta).
+    if(a.tipo==="Coleta" && a.loteId){
+      var l=(S.estado.lotes||[]).find(function(x){return x.id===a.loteId;});
+      if(l){
+        l.responsavelColeta=v.funcionario;
+        l.dataColeta=(a.dt||"").split("T")[0];
+        api.salvarLote(l).then(function(){ overlay(false); render(); toast("Coleta registrada e vinculada ao laudo."); })
+          .catch(function(){ overlay(false); render(); toast("Coleta registrada."); });
+        return;
+      }
+    }
+    overlay(false); render(); toast(a.tipo+" registrada.");
+  }).catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function delAcao(id){
+  overlay(true);
+  api.excluirAcao(id).then(function(){ S.estado.acoes=S.estado.acoes.filter(function(x){return x.id!==id;}); overlay(false); render(); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function addAjuste(){
+  var l=loteAtual(); if(!l) return;
+  var valor=val("a_valor").trim(), op=val("a_op").trim();
+  if(!valor||!op){ toast("Preencha valor e operador.","err"); return; }
+  var a={ id:makeId(), loteId:l.id, tipo:val("a_tipo"), dt:val("a_dt"), valor:valor, operador:op, produto:val("a_prod"), obs:val("a_obs") };
+  overlay(true);
+  api.addAjuste(a).then(function(){ S.estado.ajustes.push(a); overlay(false); render(); toast("Ajuste registrado."); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function addMedicao(){
+  var l=loteAtual(); if(!l) return;
+  if([val("md_ph"),val("md_temp"),val("md_o2"),val("md_agit")].every(function(v){return !v.trim();})){ toast("Informe ao menos pH ou temperatura.","err"); return; }
+  var m={ id:makeId(), loteId:l.id, dt:val("md_dt"), ph:val("md_ph"), temperatura:val("md_temp"), oxigenio:val("md_o2"), agitacao:val("md_agit"), obs:val("md_obs") };
+  overlay(true);
+  api.addMedicao(m).then(function(){ S.estado.medicoes.push(m); overlay(false); render(); toast("Leitura registrada."); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function delMedicao(id){
+  overlay(true);
+  api.excluirMedicao(id).then(function(){ S.estado.medicoes=S.estado.medicoes.filter(function(x){return x.id!==id;}); overlay(false); render(); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function delAjuste(id){
+  overlay(true);
+  api.excluirAjuste(id).then(function(){ S.estado.ajustes=S.estado.ajustes.filter(function(x){return x.id!==id;}); overlay(false); render(); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function excluirLote(){
+  var l=loteAtual(); if(!l) return;
+  if(!confirm("Excluir o lote "+(l.loteNum||l.id)+" e seus registros?")) return;
+  overlay(true);
+  api.excluirLote(l.id).then(function(){
+    S.estado.lotes=S.estado.lotes.filter(function(x){return x.id!==l.id;});
+    S.estado.visitas=S.estado.visitas.filter(function(x){return x.loteId!==l.id;});
+    S.estado.ajustes=S.estado.ajustes.filter(function(x){return x.loteId!==l.id;});
+    limparRascunho(l.id);
+    S.view="historico"; overlay(false); render(); toast("Lote excluído.");
+  }).catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function mudarFerStatus(ferId,status){
+  overlay(true);
+  api.setFermentadorStatus(ferId,status).then(function(){ S.estado.fermentadores[ferId]=status; overlay(false); render(); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+
+function addFuncionario(){
+  var nome=val("fn_nome").trim(); if(!nome){ toast("Informe o nome.","err"); return; }
+  var f={ id:makeId(), nome:nome, funcao:val("fn_funcao"), ativo:true };
+  overlay(true);
+  api.addFuncionario(f).then(function(salvo){ S.estado.funcionarios.push(salvo||f); overlay(false); render(); toast("Funcionário cadastrado."); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function delFuncionario(id){
+  overlay(true);
+  api.excluirFuncionario(id).then(function(){ S.estado.funcionarios=S.estado.funcionarios.filter(function(x){return x.id!==id;}); overlay(false); render(); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+
+// ── Catálogos (organismo / inóculo / meio) ──
+function catLista(tipo){ return tipo==="inoculo"?"inoculos":tipo==="meio"?"meios":"organismos"; }
+function addCatalogo(tipo){
+  var nome=val("cat_nome").trim(); if(!nome){ toast("Informe o nome.","err"); return; }
+  var item={ id:makeId(), nome:nome, receita:val("cat_receita"), tempoHoras:val("cat_tempo") };
+  overlay(true);
+  api.salvarCatalogo(tipo,item).then(function(rec){ S.estado[catLista(tipo)].push(rec||item); overlay(false); render(); toast("Cadastrado."); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function delCatalogo(tipo,id){
+  overlay(true);
+  api.excluirCatalogo(tipo,id).then(function(){ var k=catLista(tipo); S.estado[k]=S.estado[k].filter(function(x){return x.id!==id;}); overlay(false); render(); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+
+// ── Fotos ──
+function selecionarFoto(){ var inp=el("fotoInput"); if(inp) inp.click(); }
+function redimensionar(file,maxDim,cb){
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var img=new Image();
+    img.onload=function(){
+      var w=img.width,h=img.height;
+      if(w>maxDim||h>maxDim){ if(w>=h){ h=Math.round(h*maxDim/w); w=maxDim; } else { w=Math.round(w*maxDim/h); h=maxDim; } }
+      var c=document.createElement("canvas"); c.width=w; c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      var dataUrl=c.toDataURL("image/jpeg",0.8);
+      cb(dataUrl.split(",")[1]); // só o base64
+    };
+    img.onerror=function(){ cb(null); };
+    img.src=e.target.result;
+  };
+  reader.onerror=function(){ cb(null); };
+  reader.readAsDataURL(file);
+}
+function uploadFoto(file){
+  var l=loteAtual(); if(!l||!file) return;
+  var cat=val("foto_cat");
+  overlay(true);
+  redimensionar(file,1280,function(b64){
+    if(!b64){ overlay(false); toast("Não foi possível ler a imagem","err"); return; }
+    var foto={ id:makeId(), loteId:l.id, categoria:cat, base64:b64, mimeType:"image/jpeg", nome:l.loteNum+"-"+cat+".jpg" };
+    api.salvarFoto(foto).then(function(rec){ S.estado.fotos.push(rec||foto); overlay(false); render(); toast("Foto adicionada."); })
+      .catch(function(){ overlay(false); toast("Erro ao enviar foto","err"); });
+  });
+}
+function delFoto(id){
+  overlay(true);
+  api.excluirFoto(id).then(function(){ S.estado.fotos=S.estado.fotos.filter(function(x){return x.id!==id;}); overlay(false); render(); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+
+// ── PDF do laudo ──
+function verPdf(){
+  var l=loteAtual(); if(!l) return;
+  overlay(true);
+  api.gerarLaudoPdf(l.id).then(function(res){
+    overlay(false);
+    try{
+      var blob=b64toBlob(res.base64,"application/pdf");
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement("a"); a.href=url; a.download=res.filename||"laudo.pdf";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); },4000);
+      toast("PDF gerado.");
+    }catch(e){ if(res.url) window.open(res.url,"_blank"); }
+  }).catch(function(e){ overlay(false); toast("Erro ao gerar PDF","err"); });
+}
+function enviarPdfWhats(){
+  var l=loteAtual(); if(!l) return;
+  var num=(val("wa_num")||"").replace(/\D/g,"");
+  overlay(true);
+  api.gerarLaudoPdf(l.id).then(function(res){
+    overlay(false);
+    var legenda="Laudo — "+(l.produto||l.loteNum||"");
+    // 1) Tenta compartilhar o arquivo PDF direto (Android).
+    try{
+      var blob=b64toBlob(res.base64,"application/pdf");
+      var file=new File([blob],res.filename||"laudo.pdf",{type:"application/pdf"});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        navigator.share({files:[file],title:res.filename,text:legenda})
+          .catch(function(){ fallbackPdfLink(res,num,legenda); });
+        return;
+      }
+    }catch(e){}
+    // 2) Fallback: manda o link do PDF (Drive) por WhatsApp.
+    fallbackPdfLink(res,num,legenda);
+  }).catch(function(){ overlay(false); toast("Erro ao gerar PDF","err"); });
+}
+function fallbackPdfLink(res,num,legenda){
+  if(!res.url || res.url.indexOf("about:")===0){
+    // Sem link disponível: baixa o PDF para anexar manualmente.
+    verPdf(); toast("Anexe o PDF baixado no WhatsApp.");
+    return;
+  }
+  var texto=legenda+"\nLaudo em PDF: "+res.url;
+  var base= num ? "https://wa.me/"+num : "https://wa.me/";
+  window.open(base+"?text="+encodeURIComponent(texto),"_blank");
+}
+
+// ─── EVENTOS ───────────────────────────────────────────────────────
+function bind(){
+  var app=el("app");
+  app.onclick=function(ev){
+    var t=ev.target.closest("[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-bstatus],[data-saidav],[data-delvisitag],[data-delacao],[data-delajuste],[data-delmed],[data-delfunc],[data-delfoto],[data-delcat],#btnSalvarFicha,#btnFinalizar,#btnSalvarRelatorio,#btnAddVisitaG,#btnAddAcao,#btnAddMed,#btnAddAjuste,#btnExcluir,#btnWhats,#btnCopiar,#btnAddFunc,#btnAddCat,#btnFoto,#btnVerPdf,#btnPdfWhats,#btnCSV");
+    if(!t) return;
+    if(t.dataset.nav){ capturarSecaoAtual(); S.view=t.dataset.nav; render(); return; }
+    if(t.dataset.hist){ capturarSecaoAtual(); S.aFer=t.dataset.hist; S.view="historico"; render(); return; }
+    if(t.dataset.novo){ novoLote(t.dataset.novo); return; }
+    if(t.dataset.abrir){ var p=t.dataset.abrir.split("|"); S.aFer=p[0]; S.aLoteId=p[1]; aplicarRascunho(p[1]); S.secao="ficha"; S.view="lote"; render(); return; }
+    if(t.dataset.abrirvisita){ S.aVisitaId=t.dataset.abrirvisita; S.view="visita"; render(); return; }
+    if(t.dataset.sec){ capturarSecaoAtual(); S.secao=t.dataset.sec; render(); return; }
+    if(t.dataset.cadaba){ S.cadAba=t.dataset.cadaba; render(); return; }
+    if(t.dataset.bstatus){ S.buscaStatus=t.dataset.bstatus; render(); return; }
+    if(t.dataset.saidav){ registrarSaida(t.dataset.saidav); return; }
+    if(t.dataset.delvisitag){ delVisita(t.dataset.delvisitag); return; }
+    if(t.dataset.delacao){ delAcao(t.dataset.delacao); return; }
+    if(t.dataset.delajuste){ delAjuste(t.dataset.delajuste); return; }
+    if(t.dataset.delmed){ delMedicao(t.dataset.delmed); return; }
+    if(t.dataset.delfunc){ delFuncionario(t.dataset.delfunc); return; }
+    if(t.dataset.delfoto){ delFoto(t.dataset.delfoto); return; }
+    if(t.dataset.delcat){ var pc=t.dataset.delcat.split("|"); delCatalogo(pc[0],pc[1]); return; }
+    if(t.id==="btnAddFunc"){ addFuncionario(); return; }
+    if(t.id==="btnAddCat"){ addCatalogo(t.dataset.tipo); return; }
+    if(t.id==="btnFoto"){ selecionarFoto(); return; }
+    if(t.id==="btnVerPdf"){ verPdf(); return; }
+    if(t.id==="btnPdfWhats"){ enviarPdfWhats(); return; }
+    if(t.id==="btnSalvarFicha"){ salvarFicha(); return; }
+    if(t.id==="btnFinalizar"){ finalizarProducao(); return; }
+    if(t.id==="btnSalvarRelatorio"){ salvarRelatorio(); return; }
+    if(t.id==="btnAddVisitaG"){ addVisitaGlobal(); return; }
+    if(t.id==="btnAddAcao"){ addAcao(); return; }
+    if(t.id==="btnAddMed"){ addMedicao(); return; }
+    if(t.id==="btnAddAjuste"){ addAjuste(); return; }
+    if(t.id==="btnCSV"){ exportarCSV(); return; }
+    if(t.id==="btnExcluir"){ excluirLote(); return; }
+    if(t.id==="btnWhats"){ enviarWhats(loteAtual()); return; }
+    if(t.id==="btnCopiar"){ copiarLaudo(); return; }
+  };
+  app.onchange=function(ev){
+    var s=ev.target.closest("[data-ferstatus]");
+    if(s){ mudarFerStatus(s.dataset.ferstatus, s.value); return; }
+    if(ev.target.dataset && ev.target.dataset.rec){
+      var p=ev.target.dataset.rec.split("|"); var alvo=el(p[1]);
+      if(alvo){ var r=receitaDe(p[0],ev.target.value); alvo.textContent=r?("Receita: "+r):""; }
+      // Preenche o tempo de produção a partir da receita (prefere o meio, senão o inóculo).
+      var et=el("f_tempoH");
+      if(et){ var th=tempoDe("meios",val("f_meio"))||tempoDe("inoculos",val("f_inoculo")); if(th) et.value=th; }
+      return;
+    }
+    if(ev.target.id==="ac_fer"){ var lt=el("ac_lote"); if(lt) lt.innerHTML=optionsLotesFer(ev.target.value); return; }
+    if(ev.target.id==="fotoInput"){ var file=ev.target.files&&ev.target.files[0]; if(file) uploadFoto(file); ev.target.value=""; }
+  };
+  app.oninput=function(ev){
+    if(ev.target.id==="busca_q"){ S.buscaQ=ev.target.value; var r=el("buscaResultados"); if(r) r.innerHTML=buscaLista(); }
+  };
+}
+
+function copiarLaudo(){
+  var txt=el("laudoTxt").textContent;
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){ toast("Laudo copiado."); },function(){ toast("Não foi possível copiar","err"); });
+  } else {
+    var ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); toast("Laudo copiado."); }catch(e){ toast("Não foi possível copiar","err"); }
+    document.body.removeChild(ta);
+  }
+}
+
+el("btnRefresh").onclick=function(){ carregar(); };
+setInterval(tickCountdowns, 30000);
+setInterval(autoSync, 30000);
+document.addEventListener("visibilitychange", function(){ if(!document.hidden) autoSync(); });
+carregar();
+</script>
+</body>
+</html>
