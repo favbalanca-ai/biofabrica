@@ -383,7 +383,7 @@ function carregar(){
   overlay(true);
   return api.getEstado().then(function(e){
     S.estado=e; S.usuario=e.usuario||""; overlay(false); render();
-  }).catch(function(err){ overlay(false); toast("Erro ao carregar: "+(err&&err.message||err),"err"); });
+  }).catch(function(err){ overlay(false); toast("Erro ao carregar: "+(err&&err.message||err),"err"); render(); });
 }
 // Atualização automática (sem overlay), só em telas de leitura — não mexe em formulários abertos.
 var VIEWS_SYNC = { mapa:1, painel:1, historico:1, visitas:1, buscar:1 };
@@ -396,15 +396,33 @@ function autoSync(){
 // ─── RENDER ────────────────────────────────────────────────────────
 function render(){
   var app=el("app");
-  if(!S.estado){ app.innerHTML=""; return; }
-  if(S.view==="mapa") app.innerHTML=viewMapa();
-  else if(S.view==="painel") app.innerHTML=viewPainel();
-  else if(S.view==="cadastros") app.innerHTML=viewCadastros();
-  else if(S.view==="visitas") app.innerHTML=viewVisitas();
-  else if(S.view==="visita") app.innerHTML=viewVisitaDetalhe();
-  else if(S.view==="buscar") app.innerHTML=viewBuscar();
-  else if(S.view==="historico") app.innerHTML=viewHistorico();
-  else if(S.view==="lote") app.innerHTML=viewLote();
+  if(!S.estado){
+    app.innerHTML='<div class="card" style="text-align:center;padding:28px 18px">'
+      +'<div style="font-size:40px">🌿</div>'
+      +'<h3 style="margin:10px 0 6px">Carregando…</h3>'
+      +'<p style="color:#8a7060;font-size:13px;line-height:1.5">Se não carregar em alguns segundos, toque no botão abaixo para tentar de novo.</p>'
+      +'<button class="btn" data-recarregar style="margin-top:8px">⟳ Recarregar</button></div>';
+    renderTabbar();
+    return;
+  }
+  try{
+    if(S.view==="mapa") app.innerHTML=viewMapa();
+    else if(S.view==="painel") app.innerHTML=viewPainel();
+    else if(S.view==="cadastros") app.innerHTML=viewCadastros();
+    else if(S.view==="visitas") app.innerHTML=viewVisitas();
+    else if(S.view==="visita") app.innerHTML=viewVisitaDetalhe();
+    else if(S.view==="buscar") app.innerHTML=viewBuscar();
+    else if(S.view==="historico") app.innerHTML=viewHistorico();
+    else if(S.view==="lote") app.innerHTML=viewLote();
+    else app.innerHTML=viewMapa();
+  }catch(err){
+    app.innerHTML='<div class="card" style="padding:20px">'
+      +'<h3 style="margin:0 0 8px">⚠️ Não foi possível montar esta tela</h3>'
+      +'<p style="color:#8a7060;font-size:13px;line-height:1.5">Toque em Início para voltar ao mapa. Se persistir, recarregue o app.</p>'
+      +'<button class="btn" data-nav="mapa" style="margin-top:8px">🏭 Ir para o Início</button>'
+      +'<pre style="white-space:pre-wrap;font-size:11px;color:#a05a3a;background:#f6eee0;padding:8px;border-radius:8px;margin-top:10px;overflow:auto">'
+      +String(err && err.stack ? err.stack : err).replace(/[<>]/g,"")+'</pre></div>';
+  }
   window.scrollTo(0,0); bind(); tickCountdowns(); renderTabbar();
 }
 
@@ -1257,8 +1275,9 @@ function fallbackPdfLink(res,num,legenda){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-bstatus],[data-saidav],[data-delvisitag],[data-delacao],[data-delajuste],[data-delmed],[data-delfunc],[data-delfoto],[data-delcat],#btnSalvarFicha,#btnFinalizar,#btnSalvarRelatorio,#btnAddVisitaG,#btnAddAcao,#btnAddMed,#btnAddAjuste,#btnExcluir,#btnWhats,#btnCopiar,#btnAddFunc,#btnAddCat,#btnFoto,#btnVerPdf,#btnPdfWhats,#btnCSV");
+    var t=ev.target.closest("[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-bstatus],[data-saidav],[data-delvisitag],[data-delacao],[data-delajuste],[data-delmed],[data-delfunc],[data-delfoto],[data-delcat],#btnSalvarFicha,#btnFinalizar,#btnSalvarRelatorio,#btnAddVisitaG,#btnAddAcao,#btnAddMed,#btnAddAjuste,#btnExcluir,#btnWhats,#btnCopiar,#btnAddFunc,#btnAddCat,#btnFoto,#btnVerPdf,#btnPdfWhats,#btnCSV");
     if(!t) return;
+    if(t.dataset.recarregar!==undefined){ carregar(); return; }
     if(t.dataset.nav){ capturarSecaoAtual(); S.view=t.dataset.nav; render(); return; }
     if(t.dataset.hist){ capturarSecaoAtual(); S.aFer=t.dataset.hist; S.view="historico"; render(); return; }
     if(t.dataset.novo){ novoLote(t.dataset.novo); return; }
