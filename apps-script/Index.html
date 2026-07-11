@@ -31,6 +31,11 @@
   .brand .sub{font-size:10px; color:#a08c66}
   .refresh{background:transparent; border:1px solid #5a4020; color:#bfa877; border-radius:6px;
     padding:6px 10px; font-size:13px; font-family:inherit}
+  .hdr-acoes{display:flex; align-items:center; gap:8px}
+  .sync{font-size:11px; padding:3px 8px; border-radius:20px; white-space:nowrap; display:none}
+  .sync.ok{display:inline-block; background:#1e3a24; color:#9fd0a6; border:1px solid #3f6b48}
+  .sync.pend{display:inline-block; background:#4a3410; color:#e7c37a; border:1px solid #8a6a25}
+  .sync.off{display:inline-block; background:#4a1a1a; color:#e7a0a0; border:1px solid #8a3535}
   main{max-width:680px; margin:0 auto; padding:16px}
   h1{font-size:20px; margin:0 0 4px}
   .sub2{color:var(--muted); font-size:13px; margin:0 0 14px}
@@ -114,7 +119,10 @@
         <div class="sub">BioFábrica · Controle de Produção</div>
       </div>
     </div>
-    <button class="refresh" id="btnRefresh" title="Atualizar">⟳</button>
+    <div class="hdr-acoes">
+      <span id="sync" class="sync" title="Situação da sincronização"></span>
+      <button class="refresh" id="btnRefresh" title="Atualizar">⟳</button>
+    </div>
   </header>
 
   <main id="app"></main>
@@ -207,27 +215,76 @@ function gcall(name){
   });
 }
 var USANDO_GOOGLE = (typeof google!=="undefined" && google.script && google.script.run);
+
+// ─── FILA DE ENVIO (não perde dados se a conexão cair) ─────────────
+// Escritas que falham por rede ficam guardadas no aparelho e são
+// reenviadas sozinhas quando a conexão volta.
+var OUTBOX_KEY="biofabrica_outbox_v1";
+function outboxLoad(){ try{ return JSON.parse(localStorage.getItem(OUTBOX_KEY))||[]; }catch(e){ return []; } }
+function outboxSave(q){ try{ localStorage.setItem(OUTBOX_KEY, JSON.stringify(q)); }catch(e){} }
+function outboxCount(){ return outboxLoad().length; }
+function enfileirar(name,args,coalesce){
+  var q=outboxLoad();
+  if(coalesce) q=q.filter(function(it){ return it.coalesce!==coalesce; }); // mantém só o mais recente
+  q.push({ qid:makeId(), name:name, args:args, coalesce:coalesce||null });
+  outboxSave(q); atualizarSync();
+}
+// Envia uma escrita; se falhar, guarda na fila e resolve de forma otimista
+// (a tela já mostra o dado; o envio real acontece quando der).
+function envio(name,args,otimista,coalesce){
+  return gcall.apply(null,[name].concat(args)).then(function(r){ atualizarSync(); return r; }).catch(function(){
+    enfileirar(name,args,coalesce);
+    toast("Sem conexão — salvo no aparelho, sincroniza sozinho.","err");
+    return otimista;
+  });
+}
+var _flushing=false;
+function flushOutbox(){
+  if(_flushing || !USANDO_GOOGLE) return Promise.resolve();
+  if(typeof navigator!=="undefined" && navigator.onLine===false){ atualizarSync(); return Promise.resolve(); }
+  var q=outboxLoad(); if(!q.length){ atualizarSync(); return Promise.resolve(); }
+  _flushing=true;
+  var it=q[0];
+  return gcall.apply(null,[it.name].concat(it.args)).then(function(){
+    outboxSave(outboxLoad().filter(function(x){ return x.qid!==it.qid; }));
+    _flushing=false; atualizarSync();
+    return flushOutbox();
+  }).then(function(){
+    if(!outboxCount() && S.estado && !document.hidden) autoSync(); // reconcilia com o servidor
+  }).catch(function(){ _flushing=false; atualizarSync(); }); // tenta de novo no próximo ciclo
+}
+function atualizarSync(){
+  var e=el("sync"); if(!e) return;
+  var n=outboxCount();
+  if(typeof navigator!=="undefined" && navigator.onLine===false){
+    e.className="sync off"; e.textContent=n?("⚠ sem conexão · "+n+" p/ enviar"):"⚠ sem conexão"; return;
+  }
+  if(n){ e.className="sync pend"; e.textContent="⏳ enviando "+n+"…"; return; }
+  e.className="sync ok"; e.textContent="✓ salvo";
+  clearTimeout(atualizarSync._t); atualizarSync._t=setTimeout(function(){ var x=el("sync"); if(x&&!outboxCount()) x.className="sync"; },2500);
+}
+
 var api = USANDO_GOOGLE ? {
   getEstado:function(){return gcall("getEstado");},
-  setFermentadorStatus:function(id,s){return gcall("setFermentadorStatus",id,s);},
-  salvarLote:function(l){return gcall("salvarLote",l);},
-  excluirLote:function(id){return gcall("excluirLote",id);},
-  addVisita:function(v){return gcall("addVisita",v);},
-  atualizarVisita:function(v){return gcall("atualizarVisita",v);},
-  excluirVisita:function(id){return gcall("excluirVisita",id);},
-  addAcao:function(a){return gcall("addAcao",a);},
-  excluirAcao:function(id){return gcall("excluirAcao",id);},
-  addMedicao:function(m){return gcall("addMedicao",m);},
-  excluirMedicao:function(id){return gcall("excluirMedicao",id);},
-  addAjuste:function(a){return gcall("addAjuste",a);},
-  excluirAjuste:function(id){return gcall("excluirAjuste",id);},
-  addFuncionario:function(f){return gcall("addFuncionario",f);},
-  excluirFuncionario:function(id){return gcall("excluirFuncionario",id);},
-  salvarFoto:function(f){return gcall("salvarFoto",f);},
-  excluirFoto:function(id){return gcall("excluirFoto",id);},
   gerarLaudoPdf:function(id){return gcall("gerarLaudoPdf",id);},
-  salvarCatalogo:function(tipo,item){return gcall("salvarCatalogo",tipo,item);},
-  excluirCatalogo:function(tipo,id){return gcall("excluirCatalogo",tipo,id);},
+  salvarFoto:function(f){return gcall("salvarFoto",f);}, // fotos não entram na fila (arquivos grandes)
+  setFermentadorStatus:function(id,s){return envio("setFermentadorStatus",[id,s],true,"ferstatus:"+id);},
+  salvarLote:function(l){return envio("salvarLote",[l],l,"lote:"+l.id);},
+  excluirLote:function(id){return envio("excluirLote",[id],true,"dellote:"+id);},
+  addVisita:function(v){return envio("addVisita",[v],v);},
+  atualizarVisita:function(v){return envio("atualizarVisita",[v],v,"visita:"+v.id);},
+  excluirVisita:function(id){return envio("excluirVisita",[id],true);},
+  addAcao:function(a){return envio("addAcao",[a],a);},
+  excluirAcao:function(id){return envio("excluirAcao",[id],true);},
+  addMedicao:function(m){return envio("addMedicao",[m],m);},
+  excluirMedicao:function(id){return envio("excluirMedicao",[id],true);},
+  addAjuste:function(a){return envio("addAjuste",[a],a);},
+  excluirAjuste:function(id){return envio("excluirAjuste",[id],true);},
+  addFuncionario:function(f){return envio("addFuncionario",[f],f);},
+  excluirFuncionario:function(id){return envio("excluirFuncionario",[id],true);},
+  excluirFoto:function(id){return envio("excluirFoto",[id],true);},
+  salvarCatalogo:function(tipo,item){return envio("salvarCatalogo",[tipo,item],item,"cat:"+tipo+":"+item.id);},
+  excluirCatalogo:function(tipo,id){return envio("excluirCatalogo",[tipo,id],true);},
 } : mockApi();
 
 function mockApi(){
@@ -1344,11 +1401,18 @@ function bind(){
       return;
     }
     if(ev.target.id==="ac_fer"){ var lt=el("ac_lote"); if(lt) lt.innerHTML=optionsLotesFer(ev.target.value); return; }
-    if(ev.target.id==="fotoInput"){ var file=ev.target.files&&ev.target.files[0]; if(file) uploadFoto(file); ev.target.value=""; }
+    if(ev.target.id==="fotoInput"){ var file=ev.target.files&&ev.target.files[0]; if(file) uploadFoto(file); ev.target.value=""; return; }
+    agendarAutosave(); // selects/datas da Ficha e do Relatório
   };
   app.oninput=function(ev){
-    if(ev.target.id==="busca_q"){ S.buscaQ=ev.target.value; var r=el("buscaResultados"); if(r) r.innerHTML=buscaLista(); }
+    if(ev.target.id==="busca_q"){ S.buscaQ=ev.target.value; var r=el("buscaResultados"); if(r) r.innerHTML=buscaLista(); return; }
+    agendarAutosave();
   };
+}
+// Autosave: guarda o rascunho do lote enquanto digita (não perde ao recarregar/fechar).
+function agendarAutosave(){
+  clearTimeout(agendarAutosave._t);
+  agendarAutosave._t=setTimeout(function(){ capturarSecaoAtual(); }, 600);
 }
 
 function copiarLaudo(){
@@ -1362,10 +1426,19 @@ function copiarLaudo(){
   }
 }
 
-el("btnRefresh").onclick=function(){ carregar(); };
+el("btnRefresh").onclick=function(){ flushOutbox(); carregar(); };
 setInterval(tickCountdowns, 30000);
 setInterval(autoSync, 30000);
-document.addEventListener("visibilitychange", function(){ if(!document.hidden) autoSync(); });
+setInterval(flushOutbox, 15000);                 // reenvia pendências periodicamente
+document.addEventListener("visibilitychange", function(){ if(!document.hidden){ flushOutbox(); autoSync(); } });
+if(typeof window!=="undefined"){
+  window.addEventListener("online", function(){ atualizarSync(); flushOutbox(); });
+  window.addEventListener("offline", atualizarSync);
+  // Avisa se sair com algo ainda não enviado (evita perder dados).
+  window.addEventListener("beforeunload", function(ev){ if(outboxCount()){ ev.preventDefault(); ev.returnValue=""; return ""; } });
+}
+atualizarSync();
+flushOutbox();
 carregar();
 </script>
 </body>
