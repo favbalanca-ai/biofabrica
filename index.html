@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BioFábrica · Controle de Produção</title>
+<!-- Redireciona para o app real (Google Apps Script). Se o link do app mudar,
+     troque a URL abaixo (em APP_URL) e no <meta http-equiv="refresh">. -->
+<meta http-equiv="refresh" content="0; url=https://script.google.com/macros/s/AKfycbyCe5J6p5LrIXSex7CfC6kp2mWWLaV8rkHIsV9sYMG7zLoioxLHNLi_W9kKYGPqQBqKMA/exec">
+<style>
+  html,body{height:100%;margin:0}
+  body{display:flex;align-items:center;justify-content:center;background:#f2ebe0;color:#3b2a1a;
+    font-family:Georgia,'Times New Roman',serif;text-align:center;padding:24px}
+  .box{max-width:420px}
+  .leaf{font-size:44px}
+  h1{font-size:20px;margin:12px 0 6px}
+  p{color:#8a7060;font-size:14px;line-height:1.5;margin:0 0 18px}
+  a.btn{display:inline-block;background:#3d2e1a;color:#e8d4a0;text-decoration:none;
+    padding:13px 22px;border-radius:11px;font-weight:700}
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="leaf">🌿</div>
+    <h1>Fazenda Água Viva · BioFábrica</h1>
+    <p>Abrindo o app de controle de produção…<br>Se não abrir automaticamente, toque no botão abaixo.</p>
+    <a class="btn" id="ir" href="https://script.google.com/macros/s/AKfycbyCe5J6p5LrIXSex7CfC6kp2mWWLaV8rkHIsV9sYMG7zLoioxLHNLi_W9kKYGPqQBqKMA/exec">Abrir o app ▸</a>
+  </div>
+  <script>
+    // Redirecionamento imediato (além do meta refresh, para navegadores de celular).
+    var APP_URL = document.getElementById('ir').href;
+    location.replace(APP_URL);
+  </script>
+</body>
+</html>
