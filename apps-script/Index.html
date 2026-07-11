@@ -101,6 +101,17 @@
   .ufcrow select{width:auto; min-width:96px; font-size:18px; font-weight:700}
   .ufcrow .x{font-size:20px; font-weight:700; color:var(--muted)}
   .ufcprev{margin:8px 0 4px; font-size:16px; font-weight:700; color:var(--green)}
+  /* Barra de etapas do fluxo do lote */
+  .fluxo{display:flex; align-items:flex-start; margin:12px 0 2px; overflow-x:auto; -webkit-overflow-scrolling:touch}
+  .fl-step{display:flex; flex-direction:column; align-items:center; gap:4px; min-width:62px}
+  .fl-dot{width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:700; background:#e6dcc6; color:#8a7860; border:1px solid #d4c4a8}
+  .fl-step.done .fl-dot{background:#4a7c59; color:#fff; border-color:#4a7c59}
+  .fl-step.cur .fl-dot{background:#c8860a; color:#fff; border-color:#c8860a}
+  .fl-lb{font-size:10px; color:var(--muted); text-align:center; white-space:nowrap}
+  .fl-step.cur .fl-lb{color:#8a5c00; font-weight:700}
+  .fl-line{flex:1; height:2px; background:#d4c4a8; min-width:6px; margin-top:13px}
+  .fl-line.done{background:#4a7c59}
   .stat{background:var(--surface); border:1px solid var(--line); border-top:4px solid var(--green); border-radius:10px; padding:14px}
   .stat b{display:block; font-size:28px}
   .stat span{font-size:12px; color:var(--muted)}
@@ -164,14 +175,21 @@ var LAUDO_CONSIDERACOES = [
 ];
 
 // ─── LISTAS ────────────────────────────────────────────────────────
-var STATUS_OPT = ["Disponível","Em Processo","Aguardando Análise","Concluído","Manutenção"];
+var STATUS_OPT = ["Disponível","Em Processo","Aguardando Análise","Em Análise","Concluído","Manutenção"];
 var STATUS_COR = {
   "Disponível":         {bg:"#eaf5ea",bd:"#4a7c59",tx:"#2d5c3a"},
   "Em Processo":        {bg:"#fef8e7",bd:"#c8860a",tx:"#8a5c00"},
   "Aguardando Análise": {bg:"#eef3fb",bd:"#5a7fa8",tx:"#2a5070"},
+  "Em Análise":         {bg:"#f1ecf8",bd:"#7a5aa8",tx:"#4a2a70"},
   "Concluído":          {bg:"#e8f0e8",bd:"#3d6b3d",tx:"#1e4020"},
   "Manutenção":         {bg:"#fbeaea",bd:"#8b3a3a",tx:"#5c1a1a"},
 };
+// Etapas do fluxo do lote (para a barra de progresso do status).
+var FLUXO_ETAPAS = ["Em Processo","Aguardando Análise","Em Análise","Concluído"];
+// Status do fermentador a partir do status do lote (Concluído/Reprovado liberam o fermentador).
+function ferStatusDeLote(status){
+  return (status==="Concluído"||status==="Reprovado") ? "Disponível" : status;
+}
 var OBJ_VISITA = ["Preparo inicial","Inoculação","Verificação de processo","Coleta de amostra","Ajuste de pH","Adição de antiespuma","Encerramento / Colheita","Manutenção","Vistoria geral","Outro"];
 var TIPO_ACAO = ["Coleta","Vistoria"];
 var TIPO_AJUSTE = ["pH","Antiespuma","Temperatura","Aeração","Agitação","Outro"];
@@ -602,19 +620,21 @@ function viewMapa(){
     (S.estado.config||[]).filter(function(f){return f.tipo===tipo;}).forEach(function(f){
       var st=S.estado.fermentadores[f.id]||"Disponível";
       var c=STATUS_COR[st]||STATUS_COR["Disponível"];
-      var ls=lotesDe(f.id); var emProc=ls.find(function(l){return l.status==="Em Processo";});
+      var ls=lotesDe(f.id);
+      // Lote ativo = o mais recente que ainda não foi concluído (qualquer etapa do fluxo).
+      var ativo=ls.filter(function(l){return ["Em Processo","Aguardando Análise","Em Análise"].indexOf(l.status)>=0;}).slice(-1)[0];
       h+='<div class="card fer-card" style="border-top-color:'+c.bd+';background:'+c.bg+'">'
         +'<div class="row"><span class="fer-id" style="color:'+c.tx+'">'+f.id+'</span><span class="vol">'+Number(f.volume).toLocaleString("pt-BR")+' L</span></div>'
         +'<div style="margin:6px 0">'+badge(st)+'</div>'
-        +(emProc&&emProc.produto?'<div class="muted"><b>Produto:</b> '+esc(emProc.produto)+'</div>':'')
-        +(emProc?progressoHtml(emProc):'')
-        +(emProc&&countdownHtml(emProc)?'<div style="margin-top:2px">'+countdownHtml(emProc)+'</div>':'')
+        +(ativo&&ativo.produto?'<div class="muted"><b>Produto:</b> '+esc(ativo.produto)+'</div>':'')
+        +(ativo?progressoHtml(ativo):'')
+        +(ativo&&countdownHtml(ativo)?'<div style="margin-top:2px">'+countdownHtml(ativo)+'</div>':'')
         +'<div class="muted">'+ls.length+' lote(s) registrado(s)</div>'
         +'<div class="field" style="margin:10px 0 8px">'+selectStatus(f.id,st,'data-ferstatus="'+f.id+'"')+'</div>'
         +'<div class="btn-row">'
           +'<button class="btn sec small" data-hist="'+f.id+'">📋 Histórico</button>'
-          +(st!=="Em Processo"&&st!=="Manutenção"?'<button class="btn green small" data-novo="'+f.id+'">+ Novo Lote</button>':'')
-          +(emProc?'<button class="btn small" data-abrir="'+f.id+'|'+emProc.id+'">▶ Abrir</button>':'')
+          +(st==="Disponível"?'<button class="btn green small" data-novo="'+f.id+'">+ Novo Lote</button>':'')
+          +(ativo?'<button class="btn small" data-abrir="'+f.id+'|'+ativo.id+'">▶ Abrir</button>':'')
         +'</div></div>';
     });
   });
@@ -891,6 +911,18 @@ function optionsLotesFer(ferId){
   return o;
 }
 
+// Barra de etapas: Processo → Aguard. análise → Análise → Concluído.
+function fluxoStepper(l){
+  var labels=["Em Processo","Aguard. análise","Em análise","Concluído"];
+  var idx=FLUXO_ETAPAS.indexOf(l.status);
+  var html='<div class="fluxo">';
+  FLUXO_ETAPAS.forEach(function(et,i){
+    if(i>0) html+='<span class="fl-line'+(i<=idx?" done":"")+'"></span>';
+    var cls = idx>=0 ? (i<idx?"done":(i===idx?"cur":"")) : "";
+    html+='<div class="fl-step '+cls+'"><span class="fl-dot">'+(i<idx?"✓":(i+1))+'</span><span class="fl-lb">'+labels[i]+'</span></div>';
+  });
+  return html+'</div>';
+}
 function viewLote(){
   var l=loteAtual(); if(!l) return '<div class="vazio">Lote não encontrado.</div>';
   var SECS=[["ficha","📄 Ficha"],["monitor","📈 Parâmetros"],["ajustes","⚗️ Ajustes"],["relatorio","🔬 Relatório"],["fotos","📷 Fotos"],["laudo","📤 Laudo"]];
@@ -898,6 +930,7 @@ function viewLote(){
   var h=datalistFuncionarios()
     +'<button class="voltar" data-hist="'+S.aFer+'">← '+esc(S.aFer)+' — Histórico</button>'
     +'<div class="row"><h1 style="font-family:monospace;font-size:16px">'+esc(l.loteNum||l.id)+'</h1>'+badge(l.status)+'</div>'
+    +fluxoStepper(l)
     +(countdownHtml(l)?'<div class="cdbar">'+progressoHtml(l)+countdownHtml(l)+'</div>':'')
     +'<div style="height:8px"></div><div class="segs">'+segs+'</div>';
   if(S.secao==="ficha") h+=secFicha(l);
@@ -923,7 +956,7 @@ function secFicha(l){
   var recInoc=receitaDe("inoculos",l.inoculo), recMeio=receitaDe("meios",l.meio);
   var ferVol=Number(ferConfig(l.fermentador).volume)||0;
   var volFab=l.volumeFab||(ferVol||"");
-  var finAberta = (l.status && l.status!=="Em Processo") || l.dtFim || l.temperatura || l.ph;
+  var finAberta = ["Aguardando Análise","Em Análise","Concluído"].indexOf(l.status)>=0 || l.dtFim || l.temperatura || l.ph;
   return '<div class="card"><div class="sec-title">Identificação do produto</div>'
     +field("Nº do Lote (interno)","f_loteNum",l.loteNum)
     +'<div class="field"><label>Status</label><select id="f_status">'+stOpts+'</select></div>'
@@ -1124,7 +1157,10 @@ function secLaudo(l){
     +'<div class="card"><div class="sec-title">Conferir o laudo</div>'
     +'<pre class="laudo" id="laudoTxt">'+esc(montarLaudo(l))+'</pre>'
     +'<button class="btn sec" id="btnCopiar" style="margin-top:8px">📋 Copiar texto do laudo</button>'
-    +'<p class="muted" style="margin-top:8px">Preencha os campos na aba <b>Relatório</b> para completar o laudo.</p></div>';
+    +'<p class="muted" style="margin-top:8px">Preencha os campos na aba <b>Relatório</b> para completar o laudo.</p></div>'
+    +(l.status==="Concluído"
+        ? '<div class="card" style="border-left:5px solid #3d6b3d"><div class="sec-title">Lote concluído</div><p class="muted" style="margin:0">✅ Fermentador '+esc(l.fermentador)+' liberado (Disponível).</p></div>'
+        : '<button class="btn green" id="btnConcluir">✅ Concluir lote (libera o fermentador)</button>');
 }
 
 // ─── LAUDO (texto no formato do relatório oficial) ─────────────────
@@ -1180,7 +1216,7 @@ function montarLaudo(l){
 function novoLote(ferId){
   var d=new Date();
   var loteNum=ferId+"-"+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+"-"+makeId().slice(0,4);
-  var lote={ id:makeId(), fermentador:ferId, loteNum:loteNum, status:"Em Processo",
+  var lote={ id:makeId(), fermentador:ferId, loteNum:loteNum, status:"Disponível",
     produto:"",microrganismo:"",loteProduto:"",loteMeio:"",temperatura:"",ph:"",
     dtInicio:"",dtFim:"",volumeInicial:"",volumeFinal:"",operador:"",obs:"",
     numeroRelatorio:proximoNumeroRelatorio(),dataEmissao:nowDate(),cliente:CLIENTE_PADRAO,tipoAmostra:"Multiplicado",
@@ -1192,11 +1228,11 @@ function novoLote(ferId){
     inoculo:"",meio:"",tempoProducaoH:"",volumeFab:"",loteInoculo:"",
     criadoPor:"",criadoEm:"",atualizadoEm:"" };
   overlay(true);
-  Promise.all([ api.salvarLote(lote), api.setFermentadorStatus(ferId,"Em Processo") ]).then(function(res){
-    var salvo=res[0]||lote;
-    S.estado.lotes.push(salvo); S.estado.fermentadores[ferId]="Em Processo";
-    S.aFer=ferId; S.aLoteId=salvo.id; S.secao="ficha"; S.view="lote";
-    overlay(false); render(); toast("Lote criado.");
+  // O fermentador só passa a "Em Processo" quando a Ficha for salva.
+  api.salvarLote(lote).then(function(salvo){
+    S.estado.lotes.push(salvo||lote);
+    S.aFer=ferId; S.aLoteId=(salvo||lote).id; S.secao="ficha"; S.view="lote";
+    overlay(false); render(); toast("Lote criado. Preencha a Ficha e salve para iniciar.");
   }).catch(function(){ overlay(false); toast("Erro ao criar lote","err"); });
 }
 
@@ -1215,14 +1251,16 @@ function coletarFicha(l){
 function salvarFicha(){
   var l=loteAtual(); if(!l) return;
   coletarFicha(l);
+  // Salvar a ficha coloca o lote/fermentador em "Em Processo" (enquanto não passou dessa etapa).
+  if(l.status==="Disponível" || !l.status) l.status="Em Processo";
   // Ao salvar, o contador começa automaticamente (se ainda não começou).
   if(!l.dtInicio){
     var th=l.tempoProducaoH||tempoDe("meios",l.meio)||tempoDe("inoculos",l.inoculo);
     if(th){
       var agora=nowDT();
       l.tempoProducaoH=th; l.dtInicio=agora; l.dataMultiplicacao=agora.split("T")[0];
-      if(l.status!=="Em Processo"){ l.status="Em Processo"; S.estado.fermentadores[l.fermentador]="Em Processo"; }
-      persistLote(l,"Ficha salva. Contador iniciado: "+fmt(agora)+".");
+      if(l.status==="Em Processo"){} // já está em processo
+      persistLote(l,"Ficha salva. Em Processo — contador iniciado: "+fmt(agora)+".");
       return;
     }
     toast("Ficha salva. (Cadastre o tempo de produção na receita para iniciar o contador.)");
@@ -1237,8 +1275,7 @@ function finalizarProducao(){
   if(!l.microrganismo || !l.microrganismo.trim()) faltam.push("Organismo");
   if(faltam.length){ toast("Preencha antes de finalizar: "+faltam.join(", "),"err"); return; }
   if(!l.dtFim) l.dtFim=nowDT();          // data final = agora, se ainda não preenchida
-  if(l.status==="Em Processo") l.status="Aguardando Análise";
-  S.estado.fermentadores[l.fermentador]=l.status;
+  if(l.status==="Em Processo"||l.status==="Disponível"||!l.status) l.status="Aguardando Análise";
   S.secao="relatorio";                    // segue direto para o laudo
   persistLote(l,"Produção finalizada. Preencha o laudo.");
 }
@@ -1268,10 +1305,36 @@ function persistLote(l,msg){
   overlay(true);
   api.salvarLote(l).then(function(salvo){
     Object.assign(l,salvo||{});
-    if(l.status && l.status!=="Em Processo") S.estado.fermentadores[l.fermentador]=l.status;
+    // Mantém o status do fermentador em dia na planilha (libera quando o lote conclui).
+    if(l.status){
+      var fs=ferStatusDeLote(l.status);
+      if(S.estado.fermentadores[l.fermentador]!==fs){
+        S.estado.fermentadores[l.fermentador]=fs;
+        api.setFermentadorStatus(l.fermentador,fs);
+      }
+    }
     limparRascunho(l.id);
     overlay(false); render(); toast(msg||"Salvo.");
   }).catch(function(){ overlay(false); toast("Erro ao salvar","err"); });
+}
+// Emitir o PDF do laudo move o lote para "Em Análise" (uma vez).
+function marcarEmAnalise(){
+  var l=loteAtual(); if(!l) return;
+  if(l.status==="Aguardando Análise"){
+    l.status="Em Análise";
+    api.salvarLote(l);
+    var fs=ferStatusDeLote(l.status);
+    S.estado.fermentadores[l.fermentador]=fs; api.setFermentadorStatus(l.fermentador,fs);
+    render(); toast("Lote em análise.");
+  }
+}
+// Concluir o lote: libera o fermentador (volta a Disponível).
+function concluirLote(){
+  var l=loteAtual(); if(!l) return;
+  if(!confirm("Concluir este lote? O fermentador "+l.fermentador+" volta a ficar Disponível.")) return;
+  l.status="Concluído";
+  if(!l.dtFim) l.dtFim=nowDT();
+  persistLote(l,"Lote concluído. Fermentador liberado.");
 }
 
 // ── Visitas (acesso geral à biofábrica) ──
@@ -1449,6 +1512,7 @@ function verPdf(){
       setTimeout(function(){ URL.revokeObjectURL(url); },4000);
       toast("PDF gerado.");
     }catch(e){ if(res.url) window.open(res.url,"_blank"); }
+    marcarEmAnalise();
   }).catch(function(e){ overlay(false); toast("Erro ao gerar PDF","err"); });
 }
 function enviarPdfWhats(){
@@ -1457,6 +1521,7 @@ function enviarPdfWhats(){
   overlay(true);
   api.gerarLaudoPdf(l.id).then(function(res){
     overlay(false);
+    marcarEmAnalise();
     var legenda="Laudo — "+(l.produto||l.loteNum||"");
     // 1) Tenta compartilhar o arquivo PDF direto (Android).
     try{
@@ -1487,7 +1552,7 @@ function fallbackPdfLink(res,num,legenda){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-bstatus],[data-saidav],[data-delvisitag],[data-delacao],[data-delajuste],[data-delmed],[data-delfunc],[data-delfoto],[data-delcat],#btnSalvarFicha,#btnFinalizar,#btnSalvarRelatorio,#btnAddVisitaG,#btnAddAcao,#btnAddMed,#btnAddAjuste,#btnExcluir,#btnCopiar,#btnAddFunc,#btnAddCat,#btnFoto,#btnVerPdf,#btnPdfWhats,#btnCSV");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-bstatus],[data-saidav],[data-delvisitag],[data-delacao],[data-delajuste],[data-delmed],[data-delfunc],[data-delfoto],[data-delcat],#btnSalvarFicha,#btnFinalizar,#btnConcluir,#btnSalvarRelatorio,#btnAddVisitaG,#btnAddAcao,#btnAddMed,#btnAddAjuste,#btnExcluir,#btnCopiar,#btnAddFunc,#btnAddCat,#btnFoto,#btnVerPdf,#btnPdfWhats,#btnCSV");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -1514,6 +1579,7 @@ function bind(){
     if(t.id==="btnPdfWhats"){ enviarPdfWhats(); return; }
     if(t.id==="btnSalvarFicha"){ salvarFicha(); return; }
     if(t.id==="btnFinalizar"){ finalizarProducao(); return; }
+    if(t.id==="btnConcluir"){ concluirLote(); return; }
     if(t.id==="btnSalvarRelatorio"){ salvarRelatorio(); return; }
     if(t.id==="btnAddVisitaG"){ addVisitaGlobal(); return; }
     if(t.id==="btnAddAcao"){ addAcao(); return; }
