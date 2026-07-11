@@ -110,6 +110,11 @@ function sheet_(tab) {
     sh.appendRow(COLS[tab]);
     sh.setFrozenRows(1);
   }
+  // Garante que a aba tenha colunas suficientes (abas antigas podem ter menos
+  // colunas do que o código novo espera — evita "out of bounds").
+  const need = COLS[tab].length;
+  const have = sh.getMaxColumns();
+  if (have < need) sh.insertColumnsAfter(have, need - have);
   return sh;
 }
 
