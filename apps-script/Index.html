@@ -95,6 +95,12 @@
   details.maisopc summary::-webkit-details-marker{display:none}
   .dosebox{background:#f3ead6; border:1px solid #d9c9a6; border-left:4px solid var(--green);
     border-radius:8px; padding:11px 13px; margin:0 0 12px; font-size:14px; line-height:1.55; color:var(--ink)}
+  /* Entrada do resultado UFC/mL: mantissa × 10^expoente */
+  .ufcrow{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .ufcrow input{width:80px; text-align:center; font-size:20px; font-weight:700}
+  .ufcrow select{width:auto; min-width:96px; font-size:18px; font-weight:700}
+  .ufcrow .x{font-size:20px; font-weight:700; color:var(--muted)}
+  .ufcprev{margin:8px 0 4px; font-size:16px; font-weight:700; color:var(--green)}
   .stat{background:var(--surface); border:1px solid var(--line); border-top:4px solid var(--green); border-radius:10px; padding:14px}
   .stat b{display:block; font-size:28px}
   .stat span{font-size:12px; color:var(--muted)}
@@ -390,6 +396,51 @@ function fmtUFCnum(n){
   var e=Math.floor(Math.log10(n)); var mant=n/Math.pow(10,e);
   var sup="0123456789".split("").reduce(function(o,d,i){o[d]="⁰¹²³⁴⁵⁶⁷⁸⁹"[i];return o;},{});
   return (mant.toFixed(1).replace('.',',')) + "×10" + String(e).split("").map(function(d){return sup[d]||d;}).join("") ;
+}
+// ── Entrada fácil do resultado UFC/mL no celular (mantissa × 10^expoente) ──
+function toSup(s){ var sup={'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','-':'⁻'};
+  return String(s).split("").map(function(c){return sup[c]||c;}).join(""); }
+// Quebra um resultado salvo ("1×10⁹", "1 x 10^9", "BC") em mantissa/expoente.
+function ufcParts(s){
+  if(!s) return {mant:"",exp:"",bc:false};
+  var t=String(s).trim();
+  if(/^bc$/i.test(t)) return {mant:"",exp:"",bc:true};
+  var sup={'⁰':'0','¹':'1','²':'2','³':'3','⁴':'4','⁵':'5','⁶':'6','⁷':'7','⁸':'8','⁹':'9'};
+  var norm=t.toLowerCase().replace(/ufc\/?ml/g,'').replace(/\s/g,'').replace(',','.').replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g,function(c){return sup[c];});
+  var m=norm.match(/^([0-9.]+)[x×*]10\^?([0-9]+)$/);
+  if(m) return {mant:m[1], exp:m[2], bc:false};
+  return {mant:t.replace(/ufc\/?ml/ig,'').trim(), exp:"", bc:false};
+}
+// Monta o texto do resultado a partir da mantissa e do expoente.
+function composeUFC(mant,exp){
+  mant=String(mant||"").trim().replace(',','.');
+  exp=String(exp||"").trim();
+  if(!mant && !exp) return "";
+  if(exp) return (mant||"1")+" × 10"+toSup(exp);
+  return mant;
+}
+// Campo de resultado UFC/mL fácil de digitar no celular: número + expoente.
+function ufcInput(saved){
+  var p=ufcParts(saved);
+  var exps=[3,4,5,6,7,8,9,10,11,12];
+  var expOpts='<option value="">10ⁿ</option>'+exps.map(function(e){ return '<option value="'+e+'"'+(String(e)===String(p.exp)?" selected":"")+'>10'+toSup(e)+'</option>'; }).join("");
+  return '<div class="field"><label>Microrganismo de interesse — com choque térmico (UFC/mL)</label>'
+    +'<p class="muted" style="margin:0 0 6px">Digite o número e escolha a potência de 10. Ex.: <b>1</b> × <b>10⁹</b>.</p>'
+    +'<div class="ufcrow">'
+      +'<input id="r_mant" type="number" inputmode="decimal" step="0.1" value="'+esc(p.mant)+'" placeholder="1">'
+      +'<span class="x">×</span>'
+      +'<select id="r_exp">'+expOpts+'</select>'
+      +'<span class="x">UFC/mL</span>'
+    +'</div>'
+    +'<div class="ufcprev" id="r_ufc_prev">'+(p.bc?"= BC (baixa contagem)":("= "+(composeUFC(p.mant,p.exp)||"—")+" UFC/mL"))+'</div>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)"><input type="checkbox" id="r_bc" style="width:auto"'+(p.bc?" checked":"")+'> BC — baixa contagem (não atingiu 30–300 colônias)</label>'
+    +'</div>';
+}
+function atualizarUFCprev(){
+  var prev=el("r_ufc_prev"); if(!prev) return;
+  if(el("r_bc") && el("r_bc").checked){ prev.textContent="= BC (baixa contagem)"; return; }
+  var s=composeUFC(val("r_mant"),val("r_exp"));
+  prev.textContent="= "+(s||"—")+" UFC/mL";
 }
 function media(arr){ var v=arr.filter(function(x){return x!==null&&!isNaN(x);}); if(!v.length) return null; return v.reduce(function(a,b){return a+b;},0)/v.length; }
 function medicoesDe(loteId){ return (S.estado.medicoes||[]).filter(function(m){return m.loteId===loteId;}); }
@@ -1038,9 +1089,8 @@ function secRelatorio(l){
     +selNomes("Responsável pela análise (analista)","r_respAnalise",nomesFunc(),l.responsavelAnalise||l.operador)
     +'</div>'
     +'<div class="card"><div class="sec-title">Resultados</div>'
-    +field("Microrganismo de interesse — com choque térmico (UFC/mL)","r_quant",l.resultadoQuantitativo,"text","Ex: 1×10⁹")
+    +ufcInput(l.resultadoQuantitativo)
     +fieldSel("Presença de outros microrganismos","r_outros",OUTROS_MICRO,l.outrosMicrorganismos)
-    +'<p class="muted" style="margin:0">BC = baixa contagem (não atingiu 30–300 colônias).</p>'
     +'</div>'
     +'<button class="btn" id="btnSalvarRelatorio">💾 Salvar Relatório</button>';
 }
@@ -1065,18 +1115,16 @@ function secFotos(l){
 }
 
 function secLaudo(l){
-  return '<div class="card"><div class="sec-title">Laudo (Relatório de Análise)</div>'
-    +'<pre class="laudo" id="laudoTxt">'+esc(montarLaudo(l))+'</pre>'
-    +'<p class="muted" style="margin-top:8px">Gerado a partir da aba <b>Relatório</b>. Preencha os campos lá para completar o laudo.</p></div>'
-    +'<div class="card"><div class="sec-title">Enviar por WhatsApp</div>'
-    +'<div class="field"><label>Número (opcional, com DDD)</label><input id="wa_num" type="tel" inputmode="numeric" placeholder="Ex: 55 64 99999-9999"></div>'
+  return '<div class="card"><div class="sec-title">Laudo em PDF (com fotos)</div>'
+    +'<p class="muted" style="margin:0 0 8px">Gera o PDF no formato do documento oficial, com as fotos anexadas.</p>'
+    +'<div class="field"><label>Número do WhatsApp (opcional, com DDD)</label><input id="wa_num" type="tel" inputmode="numeric" placeholder="Ex: 55 64 99999-9999"></div>'
     +'<p class="muted" style="margin:0 0 8px">Deixe em branco para escolher o contato na hora do envio.</p>'
-    +'<button class="btn wa" id="btnWhats">📤 Enviar laudo (texto) no WhatsApp</button>'
-    +'<button class="btn sec" id="btnCopiar" style="margin-top:8px">📋 Copiar texto do laudo</button></div>'
-    +'<div class="card"><div class="sec-title">Laudo em PDF (com fotos)</div>'
-    +'<p class="muted" style="margin:0 0 8px">Gera o PDF no formato do documento oficial, incluindo as fotos anexadas.</p>'
     +'<button class="btn wa" id="btnPdfWhats">📄 Enviar PDF no WhatsApp</button>'
-    +'<button class="btn sec" id="btnVerPdf" style="margin-top:8px">👁 Ver / baixar PDF</button></div>';
+    +'<button class="btn sec" id="btnVerPdf" style="margin-top:8px">👁 Ver / baixar PDF</button></div>'
+    +'<div class="card"><div class="sec-title">Conferir o laudo</div>'
+    +'<pre class="laudo" id="laudoTxt">'+esc(montarLaudo(l))+'</pre>'
+    +'<button class="btn sec" id="btnCopiar" style="margin-top:8px">📋 Copiar texto do laudo</button>'
+    +'<p class="muted" style="margin-top:8px">Preencha os campos na aba <b>Relatório</b> para completar o laudo.</p></div>';
 }
 
 // ─── LAUDO (texto no formato do relatório oficial) ─────────────────
@@ -1126,13 +1174,6 @@ function montarLaudo(l){
   L.push("");
   L.push("_Fazenda Água Viva · BioFábrica_");
   return L.join("\n");
-}
-
-function enviarWhats(l){
-  var texto=montarLaudo(l);
-  var num=(val("wa_num")||"").replace(/\D/g,"");
-  var base= num ? "https://wa.me/"+num : "https://wa.me/";
-  window.open(base+"?text="+encodeURIComponent(texto),"_blank");
 }
 
 // ─── AÇÕES ─────────────────────────────────────────────────────────
@@ -1213,7 +1254,8 @@ function coletarRelatorio(l){
     dataRecebimento:val("r_dtReceb"), dataAnalise:val("r_dtAnalise"), tecnicaPlaqueamento:val("r_tecnica"),
     diluicoesPlaqueadas:val("r_diluicoes"), tempIncubacao:val("r_tempInc"), tempoIncubacao:val("r_tempoInc"),
     choqueTermico:val("r_choque"), coloracaoGram:val("r_gram"), responsavelAnalise:val("r_respAnalise"),
-    outrosMicrorganismos:val("r_outros"), resultadoQuantitativo:val("r_quant")
+    outrosMicrorganismos:val("r_outros"),
+    resultadoQuantitativo:(el("r_bc")&&el("r_bc").checked)?"BC":composeUFC(val("r_mant"),val("r_exp"))
   });
 }
 function salvarRelatorio(){
@@ -1445,7 +1487,7 @@ function fallbackPdfLink(res,num,legenda){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-bstatus],[data-saidav],[data-delvisitag],[data-delacao],[data-delajuste],[data-delmed],[data-delfunc],[data-delfoto],[data-delcat],#btnSalvarFicha,#btnFinalizar,#btnSalvarRelatorio,#btnAddVisitaG,#btnAddAcao,#btnAddMed,#btnAddAjuste,#btnExcluir,#btnWhats,#btnCopiar,#btnAddFunc,#btnAddCat,#btnFoto,#btnVerPdf,#btnPdfWhats,#btnCSV");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-bstatus],[data-saidav],[data-delvisitag],[data-delacao],[data-delajuste],[data-delmed],[data-delfunc],[data-delfoto],[data-delcat],#btnSalvarFicha,#btnFinalizar,#btnSalvarRelatorio,#btnAddVisitaG,#btnAddAcao,#btnAddMed,#btnAddAjuste,#btnExcluir,#btnCopiar,#btnAddFunc,#btnAddCat,#btnFoto,#btnVerPdf,#btnPdfWhats,#btnCSV");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -1479,7 +1521,6 @@ function bind(){
     if(t.id==="btnAddAjuste"){ addAjuste(); return; }
     if(t.id==="btnCSV"){ exportarCSV(); return; }
     if(t.id==="btnExcluir"){ excluirLote(); return; }
-    if(t.id==="btnWhats"){ enviarWhats(loteAtual()); return; }
     if(t.id==="btnCopiar"){ copiarLaudo(); return; }
   };
   app.onchange=function(ev){
@@ -1497,6 +1538,7 @@ function bind(){
       return;
     }
     if(ev.target.id==="f_volFab"){ atualizarDoses(); agendarAutosave(); return; }
+    if(ev.target.id==="r_exp"||ev.target.id==="r_bc"){ atualizarUFCprev(); agendarAutosave(); return; }
     if(ev.target.id==="ac_fer"){ var lt=el("ac_lote"); if(lt) lt.innerHTML=optionsLotesFer(ev.target.value); return; }
     if(ev.target.id==="fotoInput"){ var file=ev.target.files&&ev.target.files[0]; if(file) uploadFoto(file); ev.target.value=""; return; }
     agendarAutosave(); // selects/datas da Ficha e do Relatório
@@ -1504,6 +1546,7 @@ function bind(){
   app.oninput=function(ev){
     if(ev.target.id==="busca_q"){ S.buscaQ=ev.target.value; var r=el("buscaResultados"); if(r) r.innerHTML=buscaLista(); return; }
     if(ev.target.id==="f_volFab"){ atualizarDoses(); }
+    if(ev.target.id==="r_mant"){ atualizarUFCprev(); }
     agendarAutosave();
   };
 }
