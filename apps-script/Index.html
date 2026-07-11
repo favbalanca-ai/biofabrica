@@ -765,8 +765,9 @@ function secFicha(l){
     +'<p class="muted" style="margin:0">Não achou na lista? Cadastre em <b>Cadastros</b> (no mapa).</p>'
     +'</div>'
     +'<div class="card"><div class="sec-title">Processo</div>'
-    +field("Data/Hora de início","f_dtInicio",l.dtInicio,"datetime-local")
+    +field("Data/Hora de início (= multiplicação)","f_dtInicio",l.dtInicio,"datetime-local")
     +fieldNum("Tempo de produção (horas)","f_tempoH",l.tempoProducaoH,"vem da receita")
+    +'<button class="btn green" id="btnIniciar" style="margin:2px 0 12px">▶ Iniciar contador de tempo (marca início = agora)</button>'
     +(countdownHtml(l)?'<div class="cdbar" style="margin-bottom:12px">'+countdownHtml(l)+'</div>':'')
     +field("Data/Hora de fim","f_dtFim",l.dtFim,"datetime-local")
     +'<div class="grid2">'+field("Temperatura","f_temperatura",l.temperatura,"text","Ex: 30 ou N/A")+field("pH","f_ph",l.ph,"text","Ex: 6.5 ou N/A")+'</div>'
@@ -873,8 +874,8 @@ function secRelatorio(l){
     +field("Lote do produto","r_loteProd",l.loteProduto,"text","Ex: PA00130034")
     +field("Lote meio de cultura","r_loteMeioCult",l.loteMeio,"text","Ex: PA00180174")
     +'<div class="grid2">'+field("Temperatura","r_tempAmostra",l.temperatura,"text","Ex: 30 ou N/A")+field("pH","r_phAmostra",l.ph,"text","Ex: 6.5 ou N/A")+'</div>'
-    +'<div class="grid2">'+field("Data da multiplicação","r_dtMult",l.dataMultiplicacao,"date")+field("Data da coleta","r_dtColeta",l.dataColeta,"date")+'</div>'
-    +selNomes("Responsável pela coleta","r_respColeta",nomesFunc(),l.responsavelColeta)
+    +'<div class="grid2">'+field("Data da multiplicação (= início)","r_dtMult",l.dataMultiplicacao||(l.dtInicio?String(l.dtInicio).split("T")[0]:""),"date")+field("Data da coleta","r_dtColeta",l.dataColeta,"date")+'</div>'
+    +selNomes("Responsável pela coleta (funcionário)","r_respColeta",nomesFunc(),l.responsavelColeta||l.operador)
     +fieldArea("Outras informações","r_outras",l.outrasInformacoes,"Ex: análise qualitativa por microscopia…")
     +'<p class="muted" style="margin:0">Estes campos também aparecem na Ficha — preencher aqui ou lá dá no mesmo.</p>'
     +'</div>'
@@ -884,7 +885,7 @@ function secRelatorio(l){
     +field("Diluições plaqueadas","r_diluicoes",l.diluicoesPlaqueadas,"text","10-3 , 10-4 e 10-5")
     +'<div class="grid2">'+field("Temp. de incubação","r_tempInc",l.tempIncubacao,"text","30±02 °C")+field("Tempo de incubação","r_tempoInc",l.tempoIncubacao,"text","24 a 48 h")+'</div>'
     +'<div class="grid2">'+fieldSel("Choque térmico","r_choque",SIM_NAO,l.choqueTermico||"Sim")+fieldSel("Coloração de Gram","r_gram",GRAM_OPT,l.coloracaoGram||"Sim")+'</div>'
-    +selNomes("Responsável pela análise","r_respAnalise",nomesFunc(),l.responsavelAnalise)
+    +selNomes("Responsável pela análise (analista)","r_respAnalise",nomesFunc(),l.responsavelAnalise||l.operador)
     +'</div>'
     +'<div class="card"><div class="sec-title">Resultados</div>'
     +field("Microrganismo de interesse — com choque térmico (UFC/mL)","r_quant",l.resultadoQuantitativo,"text","Ex: 1×10⁹")
@@ -1014,11 +1015,30 @@ function coletarFicha(l){
     tempoProducaoH:val("f_tempoH"), loteProduto:val("f_loteProduto"), loteMeio:val("f_loteMeio"),
     dtInicio:val("f_dtInicio"), dtFim:val("f_dtFim"), temperatura:val("f_temperatura"), ph:val("f_ph"),
     volumeInicial:val("f_volIni"), volumeFinal:val("f_volFim"), operador:val("f_operador"), obs:val("f_obs") });
+  // Data da multiplicação = data de início (preenche se ainda estiver vazia).
+  if(!l.dataMultiplicacao && l.dtInicio) l.dataMultiplicacao=String(l.dtInicio).split("T")[0];
 }
 function salvarFicha(){
   var l=loteAtual(); if(!l) return;
   coletarFicha(l);
   persistLote(l,"Ficha salva.");
+}
+function iniciarContador(){
+  var l=loteAtual(); if(!l) return;
+  coletarFicha(l);
+  // O tempo de produção vem da receita (meio, senão inóculo) — sem ele não há contagem.
+  var th=l.tempoProducaoH||tempoDe("meios",l.meio)||tempoDe("inoculos",l.inoculo);
+  if(!th){ toast("Informe o tempo de produção (vem da receita do meio/inóculo).","err"); S.secao="ficha"; render(); return; }
+  if(l.dtInicio){
+    if(!confirm("O contador já foi iniciado ("+fmt(l.dtInicio)+"). Reiniciar marcando o início para agora?")) return;
+  }
+  var agora=nowDT();
+  l.tempoProducaoH=th;
+  l.dtInicio=agora;                       // início do processo = agora
+  l.dataMultiplicacao=agora.split("T")[0]; // data da multiplicação = data de início
+  l.dtFim="";                             // reinicia o fim
+  if(l.status!=="Em Processo"){ l.status="Em Processo"; S.estado.fermentadores[l.fermentador]="Em Processo"; }
+  persistLote(l,"Contador iniciado. Início: "+fmt(agora)+".");
 }
 function finalizarProducao(){
   var l=loteAtual(); if(!l) return;
@@ -1275,7 +1295,7 @@ function fallbackPdfLink(res,num,legenda){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-bstatus],[data-saidav],[data-delvisitag],[data-delacao],[data-delajuste],[data-delmed],[data-delfunc],[data-delfoto],[data-delcat],#btnSalvarFicha,#btnFinalizar,#btnSalvarRelatorio,#btnAddVisitaG,#btnAddAcao,#btnAddMed,#btnAddAjuste,#btnExcluir,#btnWhats,#btnCopiar,#btnAddFunc,#btnAddCat,#btnFoto,#btnVerPdf,#btnPdfWhats,#btnCSV");
+    var t=ev.target.closest("[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-bstatus],[data-saidav],[data-delvisitag],[data-delacao],[data-delajuste],[data-delmed],[data-delfunc],[data-delfoto],[data-delcat],#btnSalvarFicha,#btnIniciar,#btnFinalizar,#btnSalvarRelatorio,#btnAddVisitaG,#btnAddAcao,#btnAddMed,#btnAddAjuste,#btnExcluir,#btnWhats,#btnCopiar,#btnAddFunc,#btnAddCat,#btnFoto,#btnVerPdf,#btnPdfWhats,#btnCSV");
     if(!t) return;
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
     if(t.dataset.nav){ capturarSecaoAtual(); S.view=t.dataset.nav; render(); return; }
@@ -1300,6 +1320,7 @@ function bind(){
     if(t.id==="btnVerPdf"){ verPdf(); return; }
     if(t.id==="btnPdfWhats"){ enviarPdfWhats(); return; }
     if(t.id==="btnSalvarFicha"){ salvarFicha(); return; }
+    if(t.id==="btnIniciar"){ iniciarContador(); return; }
     if(t.id==="btnFinalizar"){ finalizarProducao(); return; }
     if(t.id==="btnSalvarRelatorio"){ salvarRelatorio(); return; }
     if(t.id==="btnAddVisitaG"){ addVisitaGlobal(); return; }
