@@ -110,6 +110,11 @@ function sheet_(tab) {
     sh.appendRow(COLS[tab]);
     sh.setFrozenRows(1);
   }
+  // Garante que a aba tenha colunas suficientes (abas antigas podem ter menos
+  // colunas do que o código novo espera — evita "out of bounds").
+  const need = COLS[tab].length;
+  const have = sh.getMaxColumns();
+  if (have < need) sh.insertColumnsAfter(have, need - have);
   return sh;
 }
 
@@ -140,6 +145,21 @@ function onOpen() {
 }
 
 // ─── HELPERS DE LEITURA/ESCRITA ────────────────────────────────────
+// Converte o valor de uma célula sempre para texto no formato que o app espera.
+// (O Google devolve datas como objeto Date e números como number — isso pode
+//  quebrar o envio dos dados ao navegador. Aqui normalizamos tudo para string.)
+function celStr_(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    var tz = Session.getScriptTimeZone();
+    if (v.getHours() === 0 && v.getMinutes() === 0 && v.getSeconds() === 0) {
+      return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
+    }
+    return Utilities.formatDate(v, tz, "yyyy-MM-dd'T'HH:mm");
+  }
+  return String(v);
+}
+
 function readAll_(tab) {
   const sh = sheet_(tab);
   const last = sh.getLastRow();
@@ -150,7 +170,7 @@ function readAll_(tab) {
     .filter((r) => String(r[0]).trim() !== '')
     .map((r) => {
       const o = {};
-      head.forEach((h, i) => { o[h] = r[i]; });
+      head.forEach((h, i) => { o[h] = celStr_(r[i]); });
       return o;
     });
 }
