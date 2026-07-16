@@ -477,6 +477,13 @@ function atualizarUFCprev(){
   if(el("r_bc") && el("r_bc").checked){ prev.textContent="= BC (baixa contagem)"; return; }
   prev.textContent="= "+(composeUFC(val("r_mant"),val("r_exp"))||"—")+" UFC/mL";
 }
+function fmtUFCnum(n){
+  if(n===null||isNaN(n)) return "—";
+  if(n<1000) return String(Math.round(n));
+  var e=Math.floor(Math.log10(n)); var mant=n/Math.pow(10,e);
+  var sup="0123456789".split("").reduce(function(o,d,i){o[d]="⁰¹²³⁴⁵⁶⁷⁸⁹"[i];return o;},{});
+  return (mant.toFixed(1).replace('.',','))+"×10"+String(e).split("").map(function(d){return sup[d]||d;}).join("");
+}
 // Consolida um lote: condições de processo (médias de pH/temp e % na faixa) + resultado.
 function consolidarLote(l){
   var meds=medicoesDe(l.id);
@@ -488,8 +495,13 @@ function consolidarLote(l){
   var phMed=media(phs), tMed=media(temps);
   var phIn=phs.length?Math.round(phs.filter(function(v){return v>=fx.ph[0]&&v<=fx.ph[1];}).length/phs.length*100):null;
   var tIn=temps.length?Math.round(temps.filter(function(v){return v>=fx.temp[0]&&v<=fx.temp[1];}).length/temps.length*100):null;
-  return { faixa:fx, phMed:phMed, tMed:tMed, phDentro:phIn, tDentro:tIn, nMed:meds.length, nAjustes:ajustesDe(l.id).length, ufc:parseUFC(l.resultadoQuantitativo) };
+  var horas=null; if(l.dtInicio&&l.dtFim){ var d=(new Date(l.dtFim)-new Date(l.dtInicio))/3600000; if(!isNaN(d)&&d>0) horas=Math.round(d); }
+  return { lote:l, organismo:l.microrganismo||"—", meio:l.meio||"—", inoculo:l.inoculo||"—",
+    faixa:fx, phMed:phMed, tMed:tMed, phDentro:phIn, tDentro:tIn,
+    nMed:meds.length, nAjustes:ajustesDe(l.id).length, horas:horas,
+    ufc:parseUFC(l.resultadoQuantitativo), outros:l.outrosMicrorganismos||"—", status:l.status };
 }
+function lotesAnalisaveis(){ return (S.estado.lotes||[]).map(consolidarLote).filter(function(c){return c.ufc!==null;}); }
 
 // ─── CARREGAR / SYNC ───────────────────────────────────────────────
 function carregar(){
@@ -497,7 +509,7 @@ function carregar(){
   return api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; overlay(false); render(); })
     .catch(function(err){ overlay(false); toast("Erro ao carregar: "+(err&&err.message||err),"err"); render(); });
 }
-var VIEWS_SYNC = { mapa:1, cadastros:1, visitas:1 };
+var VIEWS_SYNC = { mapa:1, cadastros:1, visitas:1, painel:1 };
 function autoSync(){
   if(document.hidden || !S.estado || !VIEWS_SYNC[S.view]) return;
   api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; render(); }).catch(function(){});
@@ -517,6 +529,7 @@ function render(){
     else if(S.view==="cadastros") app.innerHTML=viewCadastros();
     else if(S.view==="visitas") app.innerHTML=viewVisitas();
     else if(S.view==="visita") app.innerHTML=viewVisitaDetalhe();
+    else if(S.view==="painel") app.innerHTML=viewPainel();
     else if(S.view==="lote") app.innerHTML=viewLote();
     else if(S.view==="historico") app.innerHTML=viewHistorico();
     else app.innerHTML=viewMapa();
@@ -530,7 +543,7 @@ function render(){
 function renderTabbar(){
   var tb=el("tabbar"); if(!tb) return;
   var atual=({historico:"mapa",lote:"mapa",visita:"visitas"})[S.view]||S.view;
-  var itens=[["mapa","🏭","Início"],["visitas","👥","Visitas"],["cadastros","📚","Cadastros"]];
+  var itens=[["mapa","🏭","Início"],["visitas","👥","Visitas"],["cadastros","📚","Cadastros"],["painel","📊","Painel"]];
   tb.innerHTML=itens.map(function(it){ return '<button data-nav="'+it[0]+'" class="'+(atual===it[0]?"on":"")+'"><span class="ic">'+it[1]+'</span>'+it[2]+'</button>'; }).join("");
   tb.onclick=function(ev){ var b=ev.target.closest("[data-nav]"); if(b){ S.view=b.dataset.nav; render(); } };
 }
@@ -586,6 +599,88 @@ function viewHistorico(){
       +'<div class="muted" style="margin-top:4px">🗓 '+fmt(l.dtInicio)+(l.dtFim?' → '+fmt(l.dtFim):'')+'</div></div>';
   });
   return h;
+}
+
+// ─── PAINEL & ANÁLISE ──────────────────────────────────────────────
+function viewPainel(){
+  var cfg=S.estado.config||[];
+  var emProc=cfg.filter(function(f){return (S.estado.fermentadores[f.id]||"")==="Em Processo";}).length;
+  var disp=cfg.filter(function(f){return (S.estado.fermentadores[f.id]||"Disponível")==="Disponível";}).length;
+  return '<h1>Painel & Análise</h1>'
+    +'<div class="grid2" style="margin:12px 0">'
+      +'<div class="stat"><b style="color:#4a7c59;font-size:20px">'+cfg.length+'</b><span>Fermentadores</span></div>'
+      +'<div class="stat" style="border-top-color:#c8860a"><b style="color:#c8860a;font-size:20px">'+emProc+'</b><span>Em Processo</span></div>'
+      +'<div class="stat" style="border-top-color:#3d6b3d"><b style="color:#3d6b3d;font-size:20px">'+disp+'</b><span>Disponíveis</span></div>'
+      +'<div class="stat" style="border-top-color:#5a7fa8"><b style="color:#5a7fa8;font-size:20px">'+(S.estado.lotes||[]).length+'</b><span>Lotes registrados</span></div>'
+    +'</div>'
+    +blocoAnalise()
+    +'<p class="muted" style="margin-top:10px">Conectado como: '+esc(S.usuario||"—")+'</p>';
+}
+function blocoAnalise(){
+  var base=lotesAnalisaveis();
+  var h='<div class="card"><div class="sec-title">Análise de dados (processo × resultado)</div>';
+  if(base.length<1){
+    h+='<p class="muted" style="margin:0">Ainda não há lotes com resultado de laudo. Registre o resultado (UFC/mL) e as leituras de pH/temperatura para o app analisar o que melhora o rendimento.</p></div>';
+    return h;
+  }
+  var ufcs=base.map(function(c){return c.ufc;}).sort(function(a,b){return a-b;});
+  var mediana=ufcs[Math.floor(ufcs.length/2)];
+  var top=base.filter(function(c){return c.ufc>=mediana;}), baixo=base.filter(function(c){return c.ufc<mediana;});
+  function medProp(arr,campo){ return media(arr.map(function(c){return c[campo];}).filter(function(v){return v!==null;})); }
+  var insights=[];
+  var phTop=medProp(top,"phMed"), phBx=medProp(baixo,"phMed");
+  var tTop=medProp(top,"tMed"), tBx=medProp(baixo,"tMed");
+  if(phTop!==null&&phBx!==null&&Math.abs(phTop-phBx)>=0.15) insights.push("Lotes com resultado acima da mediana tiveram pH médio "+phTop.toFixed(1)+" (vs "+phBx.toFixed(1)+" nos de menor resultado).");
+  if(tTop!==null&&tBx!==null&&Math.abs(tTop-tBx)>=0.5) insights.push("Melhores resultados com temperatura média "+tTop.toFixed(1)+"°C (vs "+tBx.toFixed(1)+"°C).");
+  var dentroTop=media(top.map(function(c){return c.phDentro;}).filter(function(v){return v!==null;}));
+  var dentroBx=media(baixo.map(function(c){return c.phDentro;}).filter(function(v){return v!==null;}));
+  if(dentroTop!==null&&dentroBx!==null&&dentroTop-dentroBx>=10) insights.push("Manter o pH dentro da faixa-alvo se associou a melhor resultado ("+Math.round(dentroTop)+"% na faixa nos melhores vs "+Math.round(dentroBx)+"% nos piores).");
+  var comOutros=base.filter(function(c){return /presente/i.test(c.outros);});
+  if(comOutros.length) insights.push(comOutros.length+" lote(s) com presença de outros microrganismos — verifique assepsia/temperatura desses casos.");
+  function agrupar(campo){
+    var g={};
+    base.forEach(function(c){ var k=c[campo]||"—"; (g[k]=g[k]||[]).push(c.ufc); });
+    return Object.keys(g).map(function(k){ return {k:k,n:g[k].length,m:media(g[k])}; }).sort(function(a,b){return b.m-a.m;});
+  }
+  var porMeio=agrupar("meio"), porOrg=agrupar("organismo");
+  if(insights.length){
+    h+='<div class="card" style="background:#f0f6f0;border-color:#cfe0cf;margin:0 0 10px"><b style="font-size:13px">🔎 Observações dos dados</b><ul style="margin:8px 0 0;padding-left:18px;font-size:13px;color:#3b2a1a">'
+      +insights.map(function(t){return '<li style="margin-bottom:4px">'+esc(t)+'</li>';}).join("")+'</ul></div>';
+  }
+  h+='<div class="muted" style="font-size:12px;margin-bottom:6px">Média de resultado (UFC/mL) por meio</div>';
+  h+=porMeio.map(function(g){return '<div class="row" style="border-bottom:1px solid #ede5d0;padding:6px 0"><span>'+esc(g.k)+' <span class="muted">('+g.n+')</span></span><b>'+fmtUFCnum(g.m)+'</b></div>';}).join("");
+  h+='<div class="muted" style="font-size:12px;margin:12px 0 6px">Média por organismo</div>';
+  h+=porOrg.map(function(g){return '<div class="row" style="border-bottom:1px solid #ede5d0;padding:6px 0"><span>'+esc(g.k)+' <span class="muted">('+g.n+')</span></span><b>'+fmtUFCnum(g.m)+'</b></div>';}).join("");
+  h+='<div class="muted" style="font-size:12px;margin:14px 0 6px">Lotes analisados ('+base.length+')</div>';
+  base.slice().sort(function(a,b){return b.ufc-a.ufc;}).forEach(function(c){
+    var alerta=(c.phDentro!==null&&c.phDentro<70)||(c.tDentro!==null&&c.tDentro<70)||/presente/i.test(c.outros);
+    h+='<div class="card" style="margin:0 0 8px;border-left:5px solid '+(alerta?"#c8860a":"#4a7c59")+'">'
+      +'<div class="row"><b>'+esc(c.lote.loteNum||c.lote.id)+'</b><b>'+fmtUFCnum(c.ufc)+' UFC/mL</b></div>'
+      +'<div class="muted" style="margin-top:3px">'+esc(c.organismo)+' · '+esc(c.meio)+'</div>'
+      +'<div class="muted">pH '+(c.phMed!==null?c.phMed.toFixed(1):"—")+(c.phDentro!==null?' ('+c.phDentro+'% na faixa)':'')
+        +' · Temp '+(c.tMed!==null?c.tMed.toFixed(1)+"°":"—")+(c.tDentro!==null?' ('+c.tDentro+'% na faixa)':'')
+        +' · '+c.nMed+' leitura(s) · outros: '+esc(c.outros)+'</div></div>';
+  });
+  h+='<button class="btn sec" id="btnCSV" style="margin-top:10px">⬇ Exportar dados (CSV)</button>';
+  h+='<p class="muted" style="font-size:11px;margin-top:6px">As faixas-alvo por organismo são referências gerais. Exporte o CSV para uma análise mais aprofundada.</p></div>';
+  return h;
+}
+function exportarCSV(){
+  var base=(S.estado.lotes||[]).map(consolidarLote);
+  var cols=["loteNum","fermentador","organismo","meio","inoculo","status","dtInicio","dtFim","horas","tempoPrevistoH","phMedio","phDentroFaixa%","tempMedia","tempDentroFaixa%","nLeituras","nAjustes","resultadoUFC","outrosMicrorganismos","faixaPh","faixaTemp"];
+  var linhas=[cols.join(";")];
+  base.forEach(function(c){
+    var l=c.lote;
+    var row=[l.loteNum||l.id,l.fermentador,c.organismo,c.meio,c.inoculo,c.status,l.dtInicio||"",l.dtFim||"",c.horas!=null?c.horas:"",l.tempoProducaoH||"",
+      c.phMed!=null?c.phMed.toFixed(2):"",c.phDentro!=null?c.phDentro:"",c.tMed!=null?c.tMed.toFixed(2):"",c.tDentro!=null?c.tDentro:"",
+      c.nMed,c.nAjustes,c.ufc!=null?c.ufc:"",c.outros,c.faixa.ph.join("-"),c.faixa.temp.join("-")];
+    linhas.push(row.map(function(v){ v=String(v==null?"":v); return /[;"\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }).join(";"));
+  });
+  var blob=new Blob(["﻿"+linhas.join("\n")],{type:"text/csv;charset=utf-8"});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement("a"); a.href=url; a.download="biofabrica-dados.csv"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); },4000);
+  toast("CSV exportado.");
 }
 
 // ─── VISITAS (acesso geral à biofábrica) ───────────────────────────
@@ -1338,7 +1433,7 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnCSV");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -1367,6 +1462,7 @@ function bind(){
     if(t.id==="btnAddVisitaG"){ addVisitaGlobal(); return; }
     if(t.id==="btnAddAcao"){ addAcao(); return; }
     if(t.id==="btnFoto"){ selecionarFoto(); return; }
+    if(t.id==="btnCSV"){ exportarCSV(); return; }
     if(t.id==="btnSalvarFicha"){ salvarFicha(); return; }
     if(t.id==="btnFinalizar"){ finalizarProducao(); return; }
     if(t.id==="btnExcluir"){ excluirLote(); return; }
