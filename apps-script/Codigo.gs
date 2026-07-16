@@ -68,8 +68,8 @@ const COLS = {
     'inoculo', 'meio', 'tempoProducaoH',
     // Volume de fabricação (para dosear insumos) e lote do inóculo usado
     'volumeFab', 'loteInoculo',
-    // Sólido (salas): número de sacos
-    'numeroSacos',
+    // Sólido (salas): tipo de substrato e número de sacos
+    'numeroSacos', 'tipoSubstrato', 'tipoSubstratoOutro',
   ],
   [TAB.VISITAS]: ['id', 'loteId', 'funcionario', 'objetivo', 'dtEntrada', 'dtSaida'],
   [TAB.AJUSTES]: ['id', 'loteId', 'tipo', 'dt', 'valor', 'operador', 'produto', 'obs'],
