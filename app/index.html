@@ -551,8 +551,6 @@ function renderTabbar(){
 // ─── SELO / STATUS ─────────────────────────────────────────────────
 function badge(status){ var c=STATUS_COR[status]||STATUS_COR["Disponível"];
   return '<span class="badge" style="background:'+c.bg+';color:'+c.tx+';border-color:'+c.bd+'"><span class="dot" style="background:'+c.bd+'"></span>'+esc(status)+'</span>'; }
-function selectStatus(id,cur){ var o=STATUS_OPT.map(function(s){return '<option'+(s===cur?" selected":"")+'>'+s+'</option>';}).join("");
-  return '<select data-ferstatus="'+id+'">'+o+'</select>'; }
 
 // ─── MAPA ──────────────────────────────────────────────────────────
 function viewMapa(){
@@ -571,8 +569,7 @@ function viewMapa(){
         +(ativo?progressoHtml(ativo):'')
         +(ativo&&countdownHtml(ativo)?'<div style="margin-top:2px">'+countdownHtml(ativo)+'</div>':'')
         +(ativo&&tempoAcabou(ativo)?'<div class="muted" style="color:#b5651d;font-weight:700;margin-top:2px">⏰ Tempo concluído — finalizar</div>':'')
-        +'<div class="muted">'+ls.length+' lote(s) registrado(s)</div>'
-        +'<div class="field" style="margin:10px 0 8px">'+selectStatus(f.id,st)+'</div>'
+        +'<div class="muted" style="margin-bottom:8px">'+ls.length+' lote(s) registrado(s)</div>'
         +'<div class="btn-row">'
           +'<button class="btn sec small" data-hist="'+f.id+'">📋 Histórico</button>'
           +(st==="Disponível"?'<button class="btn green small" data-novo="'+f.id+'">+ Novo Lote</button>':'')
@@ -1037,14 +1034,12 @@ function volFabSelect(cur, ferVol){
   return '<div class="field"><label>Volume de fabricação (múltiplos de 500 L)</label><select id="f_volFab">'+o+'</select></div>';
 }
 function secFicha(l){
-  var stOpts=STATUS_OPT.map(function(s){return '<option'+(s===l.status?" selected":"")+'>'+s+'</option>';}).join("");
   var recInoc=receitaDe("inoculos",l.inoculo), recMeio=receitaDe("meios",l.meio);
   var ferVol=Number(ferConfig(l.fermentador).volume)||0;
   var volFab=l.volumeFab||(ferVol||"");
   var finAberta = ["Aguardando Análise","Em Análise","Concluído"].indexOf(l.status)>=0 || l.dtFim || l.temperatura || l.ph || tempoAcabou(l);
   return '<div class="card"><div class="sec-title">Identificação do produto</div>'
     +field("Nº do Lote (interno)","f_loteNum",l.loteNum)
-    +'<div class="field"><label>Status</label><select id="f_status">'+stOpts+'</select></div>'
     +selNomes("Nome do produto","f_produto",nomesProd(),l.produto,' data-prod="1"')
     +selNomes("Organismo (microrganismo)","f_microrganismo",nomesOrg(),l.microrganismo)
     +selNomes("Inóculo","f_inoculo",nomesInoc(),l.inoculo,' data-rec="inoculos|f_inoc_rec"')
@@ -1106,7 +1101,8 @@ function proximoNumeroRelatorio(){
   return String(max+1).padStart(3,"0");
 }
 function coletarFicha(l){
-  Object.assign(l,{ loteNum:val("f_loteNum"), status:val("f_status"), produto:val("f_produto"),
+  // O status NÃO é lido de um seletor — é controlado automaticamente pelo fluxo.
+  Object.assign(l,{ loteNum:val("f_loteNum"), produto:val("f_produto"),
     microrganismo:val("f_microrganismo"), inoculo:val("f_inoculo"), meio:val("f_meio"),
     tempoProducaoH:val("f_tempoH"), loteMeio:val("f_loteMeio"), loteInoculo:val("f_loteInoculo"), volumeFab:val("f_volFab"),
     dtInicio:val("f_dtInicio"), dtFim:val("f_dtFim"), temperatura:val("f_temperatura"), ph:val("f_ph"),
@@ -1196,12 +1192,6 @@ function delFuncionario(id){
   api.excluirFuncionario(id).then(function(){ S.estado.funcionarios=S.estado.funcionarios.filter(function(x){return x.id!==id;}); overlay(false); render(); })
     .catch(function(){ overlay(false); toast("Erro","err"); });
 }
-function mudarFerStatus(ferId,status){
-  overlay(true);
-  api.setFermentadorStatus(ferId,status).then(function(){ S.estado.fermentadores[ferId]=status; overlay(false); render(); })
-    .catch(function(){ overlay(false); toast("Erro","err"); });
-}
-
 // ── Leituras (pH/temperatura) ──
 function passoLeitura(spec){
   var p=spec.split("|"); var input=el(p[0]); if(!input) return;
@@ -1256,18 +1246,15 @@ function coletarRelatorio(l){
     resultadoQuantitativo:(el("r_bc")&&el("r_bc").checked)?"BC":composeUFC(val("r_mant"),val("r_exp"))
   });
 }
-function salvarRelatorio(){ var l=loteAtual(); if(!l) return; coletarRelatorio(l); persistLote(l,"Relatório salvo."); }
-
-// ── Laudo: emitir move para "Em Análise"; concluir libera o fermentador ──
-function marcarEmAnalise(){
+function salvarRelatorio(){
   var l=loteAtual(); if(!l) return;
-  if(l.status==="Aguardando Análise"){
-    l.status="Em Análise"; l.dataEmissao=nowDate();
-    api.salvarLote(l);
-    var fs=ferStatusDeLote(l.status); S.estado.fermentadores[l.fermentador]=fs; api.setFermentadorStatus(l.fermentador,fs);
-    render(); toast("Lote em análise.");
-  }
+  coletarRelatorio(l);
+  // Registrar a análise move o lote de "Aguardando Análise" para "Em Análise".
+  if(l.status==="Aguardando Análise"){ l.status="Em Análise"; if(!l.dataEmissao) l.dataEmissao=nowDate(); }
+  persistLote(l,"Relatório salvo.");
 }
+
+// ── Laudo: concluir libera o fermentador (Concluído → Disponível) ──
 function concluirLote(){
   var l=loteAtual(); if(!l) return;
   if(!confirm("Concluir este lote? O fermentador "+l.fermentador+" volta a ficar Disponível.")) return;
@@ -1287,8 +1274,8 @@ function copiarLaudo(){
 function compartilharLaudo(){
   var l=loteAtual(); if(!l) return;
   var txt=montarLaudo(l).replace(/\*/g,"").replace(/_/g,"");
-  if(navigator.share){ navigator.share({title:"Laudo — "+(l.produto||l.loteNum||""), text:txt}).then(marcarEmAnalise).catch(function(){}); return; }
-  window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank"); marcarEmAnalise();
+  if(navigator.share){ navigator.share({title:"Laudo — "+(l.produto||l.loteNum||""), text:txt}).catch(function(){}); return; }
+  window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank");
 }
 // Monta o laudo formatado (tabela) e chama a impressão do navegador (Salvar como PDF).
 function laudoPrintHtml(l){
@@ -1322,7 +1309,6 @@ function fotosLaudoHtml(l){
 function imprimirLaudo(){
   var l=loteAtual(); if(!l) return;
   var pr=el("laudoPrint"); if(pr){ pr.innerHTML=laudoPrintHtml(l); }
-  marcarEmAnalise();
   setTimeout(function(){ window.print(); }, 50);
 }
 
@@ -1470,8 +1456,6 @@ function bind(){
     if(t.id==="btnAddFunc"){ addFuncionario(); return; }
   };
   app.onchange=function(ev){
-    var s=ev.target.closest("[data-ferstatus]");
-    if(s){ mudarFerStatus(s.dataset.ferstatus, s.value); return; }
     if(ev.target.dataset && ev.target.dataset.prod!==undefined){ aplicarProduto(ev.target.value); return; }
     if(ev.target.dataset && ev.target.dataset.rec){
       var p=ev.target.dataset.rec.split("|"); var alvo=el(p[1]);
