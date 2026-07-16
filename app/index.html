@@ -115,6 +115,8 @@
   .ufcprev{margin:8px 0 4px; font-size:16px; font-weight:700; color:var(--green)}
   pre.laudo{white-space:pre-wrap; word-wrap:break-word; background:var(--surface2); border:1px solid #d4c4a8;
     border-radius:8px; padding:14px; font-family:Georgia,serif; font-size:13.5px; line-height:1.5; color:var(--ink)}
+  .secnav{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:14px}
+  .secnav span{flex:0 0 1px}
   /* Camada 4: fotos */
   .fotogrid{display:grid; grid-template-columns:1fr 1fr; gap:10px}
   .fotocard{background:var(--surface); border:1px solid var(--line); border-radius:10px; overflow:hidden}
@@ -834,7 +836,22 @@ function viewLote(){
   else if(S.secao==="fotos") h+=secFotos(l);
   else if(S.secao==="laudo") h+=secLaudo(l);
   else h+='<div class="vazio">🚧 <b>'+esc((SECS.find(function(s){return s[0]===S.secao;})||[])[1]||"")+'</b><br>Esta parte entra na próxima camada da reconstrução.</div>';
+  // Navegação entre abas (deslize com o dedo ou use os botões).
+  var idx=SECS.findIndex(function(s){return s[0]===S.secao;});
+  h+='<div class="secnav">'
+    +(idx>0?'<button class="btn sec small" data-secnav="prev">◂ '+esc(SECS[idx-1][1])+'</button>':'<span></span>')
+    +(idx>=0&&idx<SECS.length-1?'<button class="btn sec small" data-secnav="next">'+esc(SECS[idx+1][1])+' ▸</button>':'<span></span>')
+    +'</div>'
+    +'<p class="muted" style="text-align:center;font-size:11px;margin:6px 0 0">deslize ◂ ▸ para passar de aba</p>';
   return h;
+}
+// Muda para a aba anterior/seguinte do lote.
+var LOTE_SECS=["ficha","monitor","ajustes","relatorio","fotos","laudo"];
+function passarAba(dir){
+  var i=LOTE_SECS.indexOf(S.secao); if(i<0) return;
+  var ni=i+(dir==="next"?1:-1);
+  if(ni<0||ni>=LOTE_SECS.length) return;
+  S.secao=LOTE_SECS[ni]; render();
 }
 
 // ── Parâmetros: leitura rápida de pH/temperatura (botões − / ＋) ──
@@ -1419,7 +1436,7 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnCSV");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnCSV");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -1433,6 +1450,7 @@ function bind(){
     if(t.dataset.delacao){ delAcao(t.dataset.delacao); return; }
     if(t.dataset.delfoto){ delFoto(t.dataset.delfoto); return; }
     if(t.dataset.sec){ S.secao=t.dataset.sec; render(); return; }
+    if(t.dataset.secnav){ passarAba(t.dataset.secnav); return; }
     if(t.dataset.cadaba){ S.cadAba=t.dataset.cadaba; render(); return; }
     if(t.dataset.delcat){ var pc=t.dataset.delcat.split("|"); delCatalogo(pc[0],pc[1]); return; }
     if(t.dataset.delfunc){ delFuncionario(t.dataset.delfunc); return; }
@@ -1484,6 +1502,22 @@ if(typeof window!=="undefined"){
   window.addEventListener("offline", atualizarSync);
   window.addEventListener("beforeunload", function(ev){ if(outboxCount()){ ev.preventDefault(); ev.returnValue=""; return ""; } });
 }
+// Passar entre as abas do lote deslizando o dedo (swipe horizontal).
+var _sw={x:0,y:0,active:false,el:null};
+document.addEventListener("touchstart",function(e){
+  if(e.touches.length!==1){ _sw.active=false; return; }
+  var t=e.touches[0]; _sw.x=t.clientX; _sw.y=t.clientY; _sw.active=true; _sw.el=e.target;
+},{passive:true});
+document.addEventListener("touchend",function(e){
+  if(!_sw.active || S.view!=="lote") return;
+  _sw.active=false;
+  var t=e.changedTouches[0]; var dx=t.clientX-_sw.x, dy=t.clientY-_sw.y;
+  // Ignora se o gesto começou numa área que rola sozinha ou num campo.
+  if(_sw.el && _sw.el.closest && _sw.el.closest(".segs,input,textarea,select,.stepper,.fotogrid,pre")) return;
+  if(Math.abs(dx)<60 || Math.abs(dx)<Math.abs(dy)*1.3) return;
+  passarAba(dx<0 ? "next" : "prev");
+},{passive:true});
+
 atualizarSync();
 flushOutbox();
 carregar();
