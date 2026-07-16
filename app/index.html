@@ -94,6 +94,19 @@
     padding:12px 14px; margin:12px 0; font-size:14px; color:#6b4c10; line-height:1.5}
   details.maisopc summary{cursor:pointer; color:var(--muted); font-size:13px; padding:6px 0; list-style:none}
   details.maisopc summary::-webkit-details-marker{display:none}
+  /* Camada 2: leitura rápida de pH/temperatura + resumo */
+  .stepper{display:flex; align-items:stretch; gap:8px; margin-bottom:4px}
+  .stepper input{text-align:center; font-size:22px; font-weight:700; padding:12px 6px}
+  .stepper button{flex:0 0 56px; font-size:24px; font-weight:700; background:var(--brand2); color:var(--gold);
+    border:none; border-radius:9px; font-family:inherit; line-height:1}
+  .stepper button:active{background:#5a4020}
+  .medlabel{display:flex; justify-content:space-between; align-items:baseline; margin:2px 0 4px}
+  .medlabel label{margin:0}
+  .medlabel .faixa{font-size:11px; color:var(--muted); text-transform:none; letter-spacing:0; font-weight:400}
+  .medlabel .faixa.fora{color:#b5651d; font-weight:700}
+  .stat{background:var(--surface2); border:1px solid var(--line); border-top:4px solid var(--green); border-radius:10px; padding:14px; text-align:center}
+  .stat b{display:block}
+  .stat span{font-size:11px; color:var(--muted)}
   #overlay{position:fixed; inset:0; background:rgba(60,45,26,.35); display:none; align-items:center; justify-content:center; z-index:200}
   #overlay .box{background:var(--surface); border-radius:10px; padding:16px 22px; font-size:14px; color:var(--brand)}
   #toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(84px + env(safe-area-inset-bottom)); z-index:300; display:none;
@@ -144,6 +157,20 @@ var STATUS_COR = {
 var FLUXO_ETAPAS = ["Em Processo","Aguardando Análise","Em Análise","Concluído"];
 var FUNCAO_OPT = ["Operador","Analista","Responsável técnico","Auxiliar","Gerente","Outro"];
 var CLIENTE_PADRAO = "Fazenda Água Viva";
+var TIPO_AJUSTE = ["pH","Antiespuma","Temperatura","Aeração","Agitação","Outro"];
+// Faixas-alvo (pH e temperatura) por microrganismo — base científica para a análise.
+var FAIXAS=[
+  {chave:"bacillus",     ph:[6.5,7.5], temp:[30,37]},
+  {chave:"priestia",     ph:[6.5,7.5], temp:[30,37]},
+  {chave:"trichoderma",  ph:[4.5,6.5], temp:[25,30]},
+  {chave:"azospirillum", ph:[6.8,7.2], temp:[30,35]},
+  {chave:"pseudomonas",  ph:[6.5,7.5], temp:[28,32]},
+  {chave:"beauveria",    ph:[5.5,6.5], temp:[25,28]},
+  {chave:"metarhizium",  ph:[5.5,6.5], temp:[25,28]},
+  {chave:"lactobacillus",ph:[5.5,6.5], temp:[30,37]},
+];
+var FAIXA_PADRAO={ph:[6.0,7.5], temp:[28,34]};
+function faixaDe(micro){ micro=(micro||"").toLowerCase(); for(var i=0;i<FAIXAS.length;i++){ if(micro.indexOf(FAIXAS[i].chave)>=0) return FAIXAS[i]; } return FAIXA_PADRAO; }
 
 // ─── HELPERS ───────────────────────────────────────────────────────
 function el(id){ return document.getElementById(id); }
@@ -353,6 +380,32 @@ function tickCountdowns(){
   }catch(e){}
 }
 
+// ─── LEITURAS / AJUSTES / ANÁLISE ──────────────────────────────────
+function medicoesDe(loteId){ return (S.estado.medicoes||[]).filter(function(m){return m.loteId===loteId;}); }
+function ajustesDe(loteId){ return (S.estado.ajustes||[]).filter(function(a){return a.loteId===loteId;}); }
+function media(arr){ var v=arr.filter(function(x){return x!==null&&!isNaN(x);}); if(!v.length) return null; return v.reduce(function(a,b){return a+b;},0)/v.length; }
+function parseUFC(s){
+  if(s===undefined||s===null) return null;
+  var sup={'⁰':'0','¹':'1','²':'2','³':'3','⁴':'4','⁵':'5','⁶':'6','⁷':'7','⁸':'8','⁹':'9'};
+  var t=String(s).toLowerCase().replace(/ufc\/?ml/g,'').replace(/\s/g,'').replace(',','.').replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g,function(c){return sup[c];});
+  var m=t.match(/^([0-9.]+)[x×*]10\^?([0-9]+)$/);
+  if(m) return parseFloat(m[1])*Math.pow(10,parseInt(m[2],10));
+  var n=parseFloat(t); return isNaN(n)?null:n;
+}
+// Consolida um lote: condições de processo (médias de pH/temp e % na faixa) + resultado.
+function consolidarLote(l){
+  var meds=medicoesDe(l.id);
+  var phs=meds.map(function(m){return num(m.ph);}).filter(function(x){return x!==null;});
+  var temps=meds.map(function(m){return num(m.temperatura);}).filter(function(x){return x!==null;});
+  if(!phs.length && num(l.ph)!==null) phs=[num(l.ph)];
+  if(!temps.length && num(l.temperatura)!==null) temps=[num(l.temperatura)];
+  var fx=faixaDe(l.microrganismo);
+  var phMed=media(phs), tMed=media(temps);
+  var phIn=phs.length?Math.round(phs.filter(function(v){return v>=fx.ph[0]&&v<=fx.ph[1];}).length/phs.length*100):null;
+  var tIn=temps.length?Math.round(temps.filter(function(v){return v>=fx.temp[0]&&v<=fx.temp[1];}).length/temps.length*100):null;
+  return { faixa:fx, phMed:phMed, tMed:tMed, phDentro:phIn, tDentro:tIn, nMed:meds.length, nAjustes:ajustesDe(l.id).length, ufc:parseUFC(l.resultadoQuantitativo) };
+}
+
 // ─── CARREGAR / SYNC ───────────────────────────────────────────────
 function carregar(){
   overlay(true);
@@ -531,7 +584,82 @@ function viewLote(){
     +(countdownHtml(l)?'<div style="margin:6px 0">'+progressoHtml(l)+countdownHtml(l)+'</div>':'')
     +'<div style="height:8px"></div><div class="segs">'+segs+'</div>';
   if(S.secao==="ficha") h+=secFicha(l);
+  else if(S.secao==="monitor") h+=secMonitor(l);
+  else if(S.secao==="ajustes") h+=secAjustes(l);
   else h+='<div class="vazio">🚧 <b>'+esc((SECS.find(function(s){return s[0]===S.secao;})||[])[1]||"")+'</b><br>Esta parte entra na próxima camada da reconstrução.</div>';
+  return h;
+}
+
+// ── Parâmetros: leitura rápida de pH/temperatura (botões − / ＋) ──
+function stepRow(label,id,valor,passo,faixa){
+  var v=num(valor);
+  var fora = v!==null && faixa && (v<faixa[0]||v>faixa[1]);
+  var alvo = faixa ? '<span class="faixa'+(fora?" fora":"")+'">alvo '+faixa[0]+'–'+faixa[1]+(fora?" ⚠":"")+'</span>' : '';
+  return '<div class="medlabel"><label>'+label+'</label>'+alvo+'</div>'
+    +'<div class="stepper">'
+    +'<button type="button" data-step="'+id+'|'+(-passo)+'|'+passo+'">−</button>'
+    +'<input id="'+id+'" type="number" inputmode="decimal" step="'+passo+'" value="'+esc(valor||"")+'" placeholder="—">'
+    +'<button type="button" data-step="'+id+'|'+passo+'|'+passo+'">＋</button>'
+    +'</div>';
+}
+function secMonitor(l){
+  var fx=faixaDe(l.microrganismo);
+  var meds=medicoesDe(l.id).slice().reverse();
+  var c=consolidarLote(l);
+  var ult=meds[0]||null;
+  var phIni = ult ? ult.ph : (num(l.ph)!==null ? l.ph : "");
+  var tpIni = ult ? ult.temperatura : (num(l.temperatura)!==null ? l.temperatura : "");
+  var h='<div class="card"><div class="sec-title">Registrar leitura</div>'
+    +'<p class="muted" style="margin-top:0">'+esc(l.microrganismo||"Organismo")+' · '
+      +(ult?'valores repetidos da última leitura — ajuste com − / ＋':'valores vindos da Ficha — ajuste com − / ＋')+'</p>'
+    +stepRow("pH","md_ph",phIni,0.1,fx.ph)
+    +stepRow("Temperatura (°C)","md_temp",tpIni,0.5,fx.temp)
+    +'<details class="maisopc"><summary>＋ Mais opções (O₂, agitação, hora, observação)</summary>'
+    +'<div class="grid2">'+fieldNum("O₂ dissolvido (%)","md_o2",ult?ult.oxigenio:"")+fieldNum("Agitação (rpm)","md_agit",ult?ult.agitacao:"")+'</div>'
+    +field("Data/Hora (vazio = agora)","md_dt","","datetime-local")
+    +field("Observação","md_obs","")
+    +'</details>'
+    +'<button class="btn green" id="btnAddMed">✅ Registrar leitura (agora)</button></div>';
+  if(meds.length){
+    h+='<div class="card"><div class="sec-title">Resumo</div><div class="grid2">'
+      +'<div class="stat" style="border-top-color:'+(c.phDentro>=70?"#4a7c59":"#c8860a")+'"><b style="font-size:20px">'+(c.phMed!==null?c.phMed.toFixed(1):"—")+'</b><span>pH médio'+(c.phDentro!==null?' · '+c.phDentro+'% na faixa':'')+'</span></div>'
+      +'<div class="stat" style="border-top-color:'+(c.tDentro>=70?"#4a7c59":"#c8860a")+'"><b style="font-size:20px">'+(c.tMed!==null?c.tMed.toFixed(1)+"°":"—")+'</b><span>Temp média'+(c.tDentro!==null?' · '+c.tDentro+'% na faixa':'')+'</span></div>'
+      +'</div></div>';
+  }
+  if(!meds.length) h+='<div class="vazio">Nenhuma leitura registrada. Registre pH e temperatura ao longo do processo para analisar o controle.</div>';
+  meds.forEach(function(m){
+    var pv=num(m.ph), tv=num(m.temperatura);
+    var phOk=pv===null||(pv>=fx.ph[0]&&pv<=fx.ph[1]); var tOk=tv===null||(tv>=fx.temp[0]&&tv<=fx.temp[1]);
+    h+='<div class="card" style="border-left:5px solid '+((phOk&&tOk)?"#4a7c59":"#c8860a")+'">'
+      +'<div class="row"><b>'+fmt(m.dt)+'</b><button class="btn danger small" data-delmed="'+m.id+'">Remover</button></div>'
+      +'<div class="muted" style="margin-top:4px">'
+        +'pH '+(m.ph!==""&&m.ph!=null?esc(m.ph)+(phOk?"":" ⚠"):"—")
+        +' · Temp '+(m.temperatura!==""&&m.temperatura!=null?esc(m.temperatura)+"°"+(tOk?"":" ⚠"):"—")
+        +(m.oxigenio?' · O₂ '+esc(m.oxigenio)+'%':'')
+        +(m.agitacao?' · '+esc(m.agitacao)+' rpm':'')+'</div>'
+      +(m.obs?'<div class="muted">📝 '+esc(m.obs)+'</div>':'')+'</div>';
+  });
+  return h;
+}
+// ── Ajustes de processo ──
+function secAjustes(l){
+  var as=ajustesDe(l.id).slice().reverse();
+  var tipoOpts=TIPO_AJUSTE.map(function(t){return '<option>'+t+'</option>';}).join("");
+  var h='<div class="card"><div class="sec-title">Registrar ajuste de processo</div>'
+    +'<div class="field"><label>Tipo</label><select id="a_tipo">'+tipoOpts+'</select></div>'
+    +field("Data/Hora","a_dt",nowDT(),"datetime-local")
+    +field("Valor / descrição","a_valor","","text","Ex: pH 6.8 · 50 mL")
+    +selNomes("Operador","a_op",nomesFunc(),"")
+    +field("Produto utilizado","a_prod","","text","Ex: H₂SO₄, antiespuma")
+    +field("Observação","a_obs","")
+    +'<button class="btn green" id="btnAddAjuste">Salvar ajuste</button></div>';
+  if(!as.length) h+='<div class="vazio">Nenhum ajuste registrado.</div>';
+  as.forEach(function(a){
+    h+='<div class="card" style="border-left:5px solid #6b4c20">'
+      +'<div class="row"><b>'+esc(a.tipo)+' → '+esc(a.valor)+'</b><button class="btn danger small" data-delajuste="'+a.id+'">Remover</button></div>'
+      +'<div class="muted" style="margin-top:4px">🕐 '+fmt(a.dt)+' · 👤 '+esc(a.operador)+(a.produto?' · 🧪 '+esc(a.produto):'')+'</div>'
+      +(a.obs?'<div class="muted">📝 '+esc(a.obs)+'</div>':'')+'</div>';
+  });
   return h;
 }
 
@@ -708,6 +836,44 @@ function mudarFerStatus(ferId,status){
     .catch(function(){ overlay(false); toast("Erro","err"); });
 }
 
+// ── Leituras (pH/temperatura) ──
+function passoLeitura(spec){
+  var p=spec.split("|"); var input=el(p[0]); if(!input) return;
+  var delta=parseFloat(p[1]); var passo=parseFloat(p[2])||0.1;
+  var cur=parseFloat(input.value); if(isNaN(cur)) cur=0;
+  var nv=cur+delta; if(nv<0) nv=0;
+  var dec=(String(passo).split(".")[1]||"").length;
+  input.value=nv.toFixed(dec);
+}
+function addMedicao(){
+  var l=loteAtual(); if(!l) return;
+  if([val("md_ph"),val("md_temp"),val("md_o2"),val("md_agit")].every(function(v){return !v.trim();})){ toast("Informe ao menos pH ou temperatura.","err"); return; }
+  var m={ id:makeId(), loteId:l.id, dt:val("md_dt")||nowDT(), ph:val("md_ph"), temperatura:val("md_temp"), oxigenio:val("md_o2"), agitacao:val("md_agit"), obs:val("md_obs") };
+  overlay(true);
+  api.addMedicao(m).then(function(){ S.estado.medicoes.push(m); overlay(false); render(); toast("Leitura registrada."); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function delMedicao(id){
+  overlay(true);
+  api.excluirMedicao(id).then(function(){ S.estado.medicoes=S.estado.medicoes.filter(function(x){return x.id!==id;}); overlay(false); render(); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+// ── Ajustes ──
+function addAjuste(){
+  var l=loteAtual(); if(!l) return;
+  var valor=val("a_valor").trim(), op=val("a_op").trim();
+  if(!valor||!op){ toast("Preencha valor e operador.","err"); return; }
+  var a={ id:makeId(), loteId:l.id, tipo:val("a_tipo"), dt:val("a_dt"), valor:valor, operador:op, produto:val("a_prod"), obs:val("a_obs") };
+  overlay(true);
+  api.addAjuste(a).then(function(){ S.estado.ajustes.push(a); overlay(false); render(); toast("Ajuste registrado."); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function delAjuste(id){
+  overlay(true);
+  api.excluirAjuste(id).then(function(){ S.estado.ajustes=S.estado.ajustes.filter(function(x){return x.id!==id;}); overlay(false); render(); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+
 // ─── PRODUTO → PREENCHE ORGANISMO/INÓCULO/MEIO + DOSES ─────────────
 function atualizarDoses(){ var box=el("f_doses"); if(!box) return; box.innerHTML=textoDoses(val("f_inoculo"),val("f_meio"),val("f_volFab")); }
 function setSelect(id,valor){
@@ -730,8 +896,9 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-sec],[data-cadaba],[data-delcat],[data-delfunc],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-sec],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste");
     if(!t) return;
+    if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
     if(t.dataset.nav){ S.view=t.dataset.nav; render(); return; }
     if(t.dataset.hist){ S.aFer=t.dataset.hist; S.view="historico"; render(); return; }
@@ -741,6 +908,10 @@ function bind(){
     if(t.dataset.cadaba){ S.cadAba=t.dataset.cadaba; render(); return; }
     if(t.dataset.delcat){ var pc=t.dataset.delcat.split("|"); delCatalogo(pc[0],pc[1]); return; }
     if(t.dataset.delfunc){ delFuncionario(t.dataset.delfunc); return; }
+    if(t.dataset.delmed){ delMedicao(t.dataset.delmed); return; }
+    if(t.dataset.delajuste){ delAjuste(t.dataset.delajuste); return; }
+    if(t.id==="btnAddMed"){ addMedicao(); return; }
+    if(t.id==="btnAddAjuste"){ addAjuste(); return; }
     if(t.id==="btnSalvarFicha"){ salvarFicha(); return; }
     if(t.id==="btnFinalizar"){ finalizarProducao(); return; }
     if(t.id==="btnExcluir"){ excluirLote(); return; }
