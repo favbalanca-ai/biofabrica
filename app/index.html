@@ -115,6 +115,11 @@
   .ufcprev{margin:8px 0 4px; font-size:16px; font-weight:700; color:var(--green)}
   pre.laudo{white-space:pre-wrap; word-wrap:break-word; background:var(--surface2); border:1px solid #d4c4a8;
     border-radius:8px; padding:14px; font-family:Georgia,serif; font-size:13.5px; line-height:1.5; color:var(--ink)}
+  /* Camada 4: fotos */
+  .fotogrid{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .fotocard{background:var(--surface); border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  .fotocard img{width:100%; height:120px; object-fit:cover; display:block; background:#eee}
+  .fotocard .row{padding:6px 8px}
   /* Área de impressão (Salvar PDF pelo navegador) — some da tela, aparece só ao imprimir */
   #laudoPrint{display:none}
   @media print{
@@ -180,6 +185,9 @@ var FLUXO_ETAPAS = ["Em Processo","Aguardando Análise","Em Análise","Concluíd
 var FUNCAO_OPT = ["Operador","Analista","Responsável técnico","Auxiliar","Gerente","Outro"];
 var CLIENTE_PADRAO = "Fazenda Água Viva";
 var TIPO_AJUSTE = ["pH","Antiespuma","Temperatura","Aeração","Agitação","Outro"];
+var OBJ_VISITA = ["Preparo inicial","Inoculação","Verificação de processo","Coleta de amostra","Ajuste de pH","Adição de antiespuma","Encerramento / Colheita","Manutenção","Vistoria geral","Outro"];
+var TIPO_ACAO = ["Coleta","Vistoria"];
+var FOTO_CAT = ["Placa diluição 10-4","Placa diluição 10-5","Microscopia/Gram","Outros (sem choque)","Outra"];
 // Faixas-alvo (pH e temperatura) por microrganismo — base científica para a análise.
 var FAIXAS=[
   {chave:"bacillus",     ph:[6.5,7.5], temp:[30,37]},
@@ -357,10 +365,15 @@ function mockApi(){
 }
 
 // ─── ESTADO ────────────────────────────────────────────────────────
-var S = { estado:null, view:"mapa", aFer:null, aLoteId:null, secao:"ficha", cadAba:"produtos", usuario:"" };
+var S = { estado:null, view:"mapa", aFer:null, aLoteId:null, aVisitaId:null, secao:"ficha", cadAba:"produtos", usuario:"" };
 function loteAtual(){ return (S.estado.lotes||[]).find(function(l){return l.id===S.aLoteId;}); }
 function lotesDe(ferId){ return (S.estado.lotes||[]).filter(function(l){return l.fermentador===ferId;}); }
 function ferConfig(id){ return (S.estado.config||[]).find(function(f){return f.id===id;})||{volume:""}; }
+function acoesDe(visitaId){ return (S.estado.acoes||[]).filter(function(a){return a.visitaId===visitaId;}); }
+function visitaAtual(){ return (S.estado.visitas||[]).find(function(v){return v.id===S.aVisitaId;}); }
+function nomeFer(loteId){ var l=(S.estado.lotes||[]).find(function(x){return x.id===loteId;}); return l?(l.loteNum||l.id):""; }
+function fotosDe(loteId){ return (S.estado.fotos||[]).filter(function(f){return f.loteId===loteId;}); }
+function thumbUrl(fileId){ return (String(fileId).indexOf("data:")===0) ? fileId : ("https://drive.google.com/thumbnail?id="+fileId+"&sz=w400"); }
 
 function nomesOrg(){ return (S.estado.organismos||[]).map(function(o){return o.nome;}); }
 function nomesInoc(){ return (S.estado.inoculos||[]).map(function(x){return x.nome;}); }
@@ -484,7 +497,7 @@ function carregar(){
   return api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; overlay(false); render(); })
     .catch(function(err){ overlay(false); toast("Erro ao carregar: "+(err&&err.message||err),"err"); render(); });
 }
-var VIEWS_SYNC = { mapa:1, cadastros:1 };
+var VIEWS_SYNC = { mapa:1, cadastros:1, visitas:1 };
 function autoSync(){
   if(document.hidden || !S.estado || !VIEWS_SYNC[S.view]) return;
   api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; render(); }).catch(function(){});
@@ -502,6 +515,8 @@ function render(){
   try{
     if(S.view==="mapa") app.innerHTML=viewMapa();
     else if(S.view==="cadastros") app.innerHTML=viewCadastros();
+    else if(S.view==="visitas") app.innerHTML=viewVisitas();
+    else if(S.view==="visita") app.innerHTML=viewVisitaDetalhe();
     else if(S.view==="lote") app.innerHTML=viewLote();
     else if(S.view==="historico") app.innerHTML=viewHistorico();
     else app.innerHTML=viewMapa();
@@ -514,8 +529,8 @@ function render(){
 }
 function renderTabbar(){
   var tb=el("tabbar"); if(!tb) return;
-  var atual=({historico:"mapa",lote:"mapa"})[S.view]||S.view;
-  var itens=[["mapa","🏭","Início"],["cadastros","📚","Cadastros"]];
+  var atual=({historico:"mapa",lote:"mapa",visita:"visitas"})[S.view]||S.view;
+  var itens=[["mapa","🏭","Início"],["visitas","👥","Visitas"],["cadastros","📚","Cadastros"]];
   tb.innerHTML=itens.map(function(it){ return '<button data-nav="'+it[0]+'" class="'+(atual===it[0]?"on":"")+'"><span class="ic">'+it[1]+'</span>'+it[2]+'</button>'; }).join("");
   tb.onclick=function(ev){ var b=ev.target.closest("[data-nav]"); if(b){ S.view=b.dataset.nav; render(); } };
 }
@@ -571,6 +586,71 @@ function viewHistorico(){
       +'<div class="muted" style="margin-top:4px">🗓 '+fmt(l.dtInicio)+(l.dtFim?' → '+fmt(l.dtFim):'')+'</div></div>';
   });
   return h;
+}
+
+// ─── VISITAS (acesso geral à biofábrica) ───────────────────────────
+function viewVisitas(){
+  var vs=(S.estado.visitas||[]).slice().reverse();
+  var objOpts=OBJ_VISITA.map(function(o){return '<option>'+o+'</option>';}).join("");
+  var h='<h1>Visitas / Acessos</h1>'
+    +'<p class="sub2">Registro geral de acesso à biofábrica. Dentro de cada visita, registre as coletas e vistorias feitas.</p>'
+    +'<div class="card"><div class="sec-title">Registrar visita</div>'
+    +selNomes("Funcionário","gv_func",nomesFunc(),"")
+    +'<div class="field"><label>Objetivo geral</label><select id="gv_obj">'+objOpts+'</select></div>'
+    +field("Entrada","gv_ent",nowDT(),"datetime-local")
+    +field("Saída (vazio se ainda presente)","gv_sai","","datetime-local")
+    +'<button class="btn green" id="btnAddVisitaG">✅ Registrar visita</button></div>';
+  if(!vs.length) h+='<div class="vazio">Nenhuma visita registrada.</div>';
+  vs.forEach(function(v){
+    var aberta=!v.dtSaida, n=acoesDe(v.id).length;
+    var min = v.dtEntrada&&v.dtSaida ? Math.round((new Date(v.dtSaida)-new Date(v.dtEntrada))/60000) : null;
+    h+='<div class="card" style="border-left:5px solid '+(aberta?"#c8860a":"#4a7c59")+'">'
+      +'<div class="row"><b>'+esc(v.funcionario)+'</b><span class="badge" style="background:'+(aberta?"#fef8e7":"#eaf5ea")+';color:'+(aberta?"#8a5c00":"#2d5c3a")+';border-color:'+(aberta?"#c8860a":"#4a7c59")+'">'+(aberta?"● Na biofábrica":"✓ Encerrada")+'</span></div>'
+      +'<div class="muted" style="margin:4px 0">'+esc(v.objetivo)+'</div>'
+      +'<div class="muted">🚪 '+fmt(v.dtEntrada)+(v.dtSaida?' · 🚶 '+fmt(v.dtSaida):'')+(min!==null?' · ⏱ '+(min>=60?Math.floor(min/60)+"h "+(min%60)+"min":min+" min"):'')+'</div>'
+      +'<div class="muted">🧪 '+n+' coleta(s)/vistoria(s)</div>'
+      +'<div class="btn-row" style="margin-top:8px">'
+        +'<button class="btn small" data-abrirvisita="'+v.id+'">Abrir / registrar ações</button>'
+        +(aberta?'<button class="btn sec small" data-saidav="'+v.id+'">Registrar saída</button>':'')
+        +'<button class="btn danger small" data-delvisitag="'+v.id+'">Remover</button>'
+      +'</div></div>';
+  });
+  return h;
+}
+function viewVisitaDetalhe(){
+  var v=visitaAtual(); if(!v) return '<div class="vazio">Visita não encontrada.</div>';
+  var acs=acoesDe(v.id).slice().reverse();
+  var aberta=!v.dtSaida;
+  var tipoOpts=TIPO_ACAO.map(function(t){return '<option>'+t+'</option>';}).join("");
+  var ferOpts=(S.estado.config||[]).map(function(f){return '<option>'+f.id+'</option>';}).join("");
+  var ferIni=(S.estado.config&&S.estado.config[0])?S.estado.config[0].id:"";
+  var h='<button class="voltar" data-nav="visitas">← Visitas</button>'
+    +'<div class="row"><h1>'+esc(v.funcionario)+'</h1><span class="badge" style="background:'+(aberta?"#fef8e7":"#eaf5ea")+';color:'+(aberta?"#8a5c00":"#2d5c3a")+';border-color:'+(aberta?"#c8860a":"#4a7c59")+'">'+(aberta?"● Na biofábrica":"✓ Encerrada")+'</span></div>'
+    +'<p class="muted">'+esc(v.objetivo)+' · 🚪 '+fmt(v.dtEntrada)+(v.dtSaida?' · 🚶 '+fmt(v.dtSaida):'')+'</p>'
+    +(aberta?'<button class="btn sec" data-saidav="'+v.id+'">🚶 Registrar saída</button>':'')
+    +'<div class="card" style="margin-top:12px"><div class="sec-title">Registrar coleta / vistoria</div>'
+    +'<div class="field"><label>Tipo</label><select id="ac_tipo">'+tipoOpts+'</select></div>'
+    +'<div class="field"><label>Fermentador</label><select id="ac_fer">'+ferOpts+'</select></div>'
+    +'<div class="field"><label>Lote (opcional)</label><select id="ac_lote">'+optionsLotesFer(ferIni)+'</select></div>'
+    +field("Data/Hora","ac_dt",nowDT(),"datetime-local")
+    +fieldArea("Observação","ac_obs","","O que foi coletado/vistoriado, condição observada…")
+    +'<button class="btn green" id="btnAddAcao">＋ Registrar</button></div>';
+  if(!acs.length) h+='<div class="vazio">Nenhuma coleta/vistoria nesta visita.</div>';
+  acs.forEach(function(a){
+    var cor=a.tipo==="Coleta"?"#5a7fa8":"#4a7c59";
+    h+='<div class="card" style="border-left:5px solid '+cor+'">'
+      +'<div class="row"><b style="color:'+cor+'">'+esc(a.tipo)+' · '+esc(a.fermentador||"—")+'</b><button class="btn danger small" data-delacao="'+a.id+'">Remover</button></div>'
+      +'<div class="muted" style="margin-top:4px">🕐 '+fmt(a.dt)+(a.loteId?' · 🧫 '+esc(nomeFer(a.loteId)):'')+'</div>'
+      +(a.obs?'<div class="muted">📝 '+esc(a.obs)+'</div>':'')+'</div>';
+  });
+  return h;
+}
+function optionsLotesFer(ferId){
+  var o='<option value="">— nenhum —</option>';
+  (S.estado.lotes||[]).filter(function(l){return l.fermentador===ferId;}).forEach(function(l){
+    o+='<option value="'+l.id+'">'+esc(l.loteNum||l.id)+'</option>';
+  });
+  return o;
 }
 
 // ─── CADASTROS ─────────────────────────────────────────────────────
@@ -659,6 +739,7 @@ function viewLote(){
   else if(S.secao==="monitor") h+=secMonitor(l);
   else if(S.secao==="ajustes") h+=secAjustes(l);
   else if(S.secao==="relatorio") h+=secRelatorio(l);
+  else if(S.secao==="fotos") h+=secFotos(l);
   else if(S.secao==="laudo") h+=secLaudo(l);
   else h+='<div class="vazio">🚧 <b>'+esc((SECS.find(function(s){return s[0]===S.secao;})||[])[1]||"")+'</b><br>Esta parte entra na próxima camada da reconstrução.</div>';
   return h;
@@ -831,6 +912,26 @@ function montarLaudo(l){
   L.push("");
   L.push("_Fazenda Água Viva · BioFábrica_");
   return L.join("\n");
+}
+
+// ── Fotos (guardadas no aparelho como imagem; entram no laudo impresso) ──
+function secFotos(l){
+  var fs=fotosDe(l.id).slice().reverse();
+  var catOpts=FOTO_CAT.map(function(c){return '<option>'+c+'</option>';}).join("");
+  var h='<div class="card"><div class="sec-title">Adicionar foto</div>'
+    +'<div class="field"><label>Categoria</label><select id="foto_cat">'+catOpts+'</select></div>'
+    +'<input type="file" id="fotoInput" accept="image/*" capture="environment" style="display:none">'
+    +'<button class="btn green" id="btnFoto">📷 Tirar / escolher foto</button>'
+    +'<p class="muted" style="margin-top:8px">Placas de diluição, microscopia/Gram. As fotos ficam no aparelho e entram no laudo impresso.</p></div>';
+  if(!fs.length) h+='<div class="vazio">Nenhuma foto adicionada.</div>';
+  else {
+    h+='<div class="fotogrid">';
+    fs.forEach(function(ft){
+      h+='<div class="fotocard"><img src="'+thumbUrl(ft.fileId)+'" alt=""><div class="row"><span class="muted">'+esc(ft.categoria||"Foto")+'</span><button class="btn danger small" data-delfoto="'+ft.id+'">✕</button></div></div>';
+    });
+    h+='</div>';
+  }
+  return h;
 }
 
 function volFabSelect(cur, ferVol){
@@ -1115,13 +1216,104 @@ function laudoPrintHtml(l){
       +kv("Choque térmico",l.choqueTermico)+kv("Coloração de Gram",l.coloracaoGram)+kv("Responsável",l.responsavelAnalise)+'</table>'
     +'<table><tr class="sec"><td colspan="2">Resultados</td></tr>'
       +kv("Microrganismo de interesse (com choque térmico)",conc||"—")+kv("Presença de outros microrganismos",l.outrosMicrorganismos)+'</table>'
-    +'<table><tr class="sec"><td colspan="2">Considerações</td></tr><tr><td colspan="2">'+LAUDO_CONSIDERACOES.map(function(c){return "• "+esc(c);}).join("<br>")+'</td></tr></table>';
+    +'<table><tr class="sec"><td colspan="2">Considerações</td></tr><tr><td colspan="2">'+LAUDO_CONSIDERACOES.map(function(c){return "• "+esc(c);}).join("<br>")+'</td></tr></table>'
+    +fotosLaudoHtml(l);
+}
+function fotosLaudoHtml(l){
+  var fs=fotosDe(l.id); if(!fs.length) return "";
+  return '<table><tr class="sec"><td>Fotos da análise</td></tr></table>'
+    +'<div>'+fs.map(function(ft){ return '<div style="display:inline-block;width:47%;margin:1.5%;text-align:center;vertical-align:top"><img src="'+thumbUrl(ft.fileId)+'" style="max-width:100%;max-height:220px;border:1px solid #ccc"><div style="font-size:9px;color:#555">'+esc(ft.categoria||"Foto")+'</div></div>'; }).join('')+'</div>';
 }
 function imprimirLaudo(){
   var l=loteAtual(); if(!l) return;
   var pr=el("laudoPrint"); if(pr){ pr.innerHTML=laudoPrintHtml(l); }
   marcarEmAnalise();
   setTimeout(function(){ window.print(); }, 50);
+}
+
+// ── Visitas / ações ──
+function addVisitaGlobal(){
+  var func=val("gv_func").trim(); if(!func){ toast("Selecione o funcionário.","err"); return; }
+  var v={ id:makeId(), loteId:"", funcionario:func, objetivo:val("gv_obj"), dtEntrada:val("gv_ent"), dtSaida:val("gv_sai") };
+  overlay(true);
+  api.addVisita(v).then(function(){ S.estado.visitas.push(v); S.aVisitaId=v.id; S.view="visita"; overlay(false); render(); toast("Visita registrada."); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function registrarSaida(id){
+  var v=(S.estado.visitas||[]).find(function(x){return x.id===id;}); if(!v) return; v.dtSaida=nowDT();
+  overlay(true);
+  api.atualizarVisita(v).then(function(){ overlay(false); render(); toast("Saída registrada."); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function delVisita(id){
+  if(!confirm("Remover esta visita e suas coletas/vistorias?")) return;
+  overlay(true);
+  api.excluirVisita(id).then(function(){
+    S.estado.visitas=S.estado.visitas.filter(function(x){return x.id!==id;});
+    S.estado.acoes=(S.estado.acoes||[]).filter(function(x){return x.visitaId!==id;});
+    if(S.view==="visita") S.view="visitas";
+    overlay(false); render();
+  }).catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function addAcao(){
+  var v=visitaAtual(); if(!v) return;
+  var a={ id:makeId(), visitaId:v.id, tipo:val("ac_tipo"), fermentador:val("ac_fer"), loteId:val("ac_lote"), dt:val("ac_dt"), obs:val("ac_obs") };
+  overlay(true);
+  api.addAcao(a).then(function(){
+    S.estado.acoes.push(a);
+    // Coleta ligada a um lote alimenta o laudo (responsável e data da coleta).
+    if(a.tipo==="Coleta" && a.loteId){
+      var l=(S.estado.lotes||[]).find(function(x){return x.id===a.loteId;});
+      if(l){
+        l.responsavelColeta=v.funcionario; l.dataColeta=(a.dt||"").split("T")[0];
+        api.salvarLote(l).then(function(){ overlay(false); render(); toast("Coleta registrada e vinculada ao laudo."); })
+          .catch(function(){ overlay(false); render(); toast("Coleta registrada."); });
+        return;
+      }
+    }
+    overlay(false); render(); toast(a.tipo+" registrada.");
+  }).catch(function(){ overlay(false); toast("Erro","err"); });
+}
+function delAcao(id){
+  overlay(true);
+  api.excluirAcao(id).then(function(){ S.estado.acoes=S.estado.acoes.filter(function(x){return x.id!==id;}); overlay(false); render(); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
+}
+
+// ── Fotos ──
+function selecionarFoto(){ var inp=el("fotoInput"); if(inp) inp.click(); }
+function redimensionar(file,maxDim,cb){
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var img=new Image();
+    img.onload=function(){
+      var w=img.width,h=img.height;
+      if(w>maxDim||h>maxDim){ if(w>=h){ h=Math.round(h*maxDim/w); w=maxDim; } else { w=Math.round(w*maxDim/h); h=maxDim; } }
+      var c=document.createElement("canvas"); c.width=w; c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      cb(c.toDataURL("image/jpeg",0.8).split(",")[1]);
+    };
+    img.onerror=function(){ cb(null); };
+    img.src=e.target.result;
+  };
+  reader.onerror=function(){ cb(null); };
+  reader.readAsDataURL(file);
+}
+function uploadFoto(file){
+  var l=loteAtual(); if(!l||!file) return;
+  var cat=val("foto_cat");
+  overlay(true);
+  redimensionar(file,1280,function(b64){
+    if(!b64){ overlay(false); toast("Não foi possível ler a imagem","err"); return; }
+    var foto={ id:makeId(), loteId:l.id, categoria:cat, base64:b64, mimeType:"image/jpeg", nome:l.loteNum+"-"+cat+".jpg" };
+    api.salvarFoto(foto).then(function(rec){ S.estado.fotos.push(rec||foto); overlay(false); render(); toast("Foto adicionada."); })
+      .catch(function(){ overlay(false); toast("Erro ao salvar foto","err"); });
+  });
+}
+function delFoto(id){
+  overlay(true);
+  api.excluirFoto(id).then(function(){ S.estado.fotos=S.estado.fotos.filter(function(x){return x.id!==id;}); overlay(false); render(); })
+    .catch(function(){ overlay(false); toast("Erro","err"); });
 }
 
 // ─── PRODUTO → PREENCHE ORGANISMO/INÓCULO/MEIO + DOSES ─────────────
@@ -1146,7 +1338,7 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-sec],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -1154,6 +1346,11 @@ function bind(){
     if(t.dataset.hist){ S.aFer=t.dataset.hist; S.view="historico"; render(); return; }
     if(t.dataset.novo){ novoLote(t.dataset.novo); return; }
     if(t.dataset.abrir){ var p=t.dataset.abrir.split("|"); S.aFer=p[0]; S.aLoteId=p[1]; S.secao="ficha"; S.view="lote"; render(); return; }
+    if(t.dataset.abrirvisita){ S.aVisitaId=t.dataset.abrirvisita; S.view="visita"; render(); return; }
+    if(t.dataset.saidav){ registrarSaida(t.dataset.saidav); return; }
+    if(t.dataset.delvisitag){ delVisita(t.dataset.delvisitag); return; }
+    if(t.dataset.delacao){ delAcao(t.dataset.delacao); return; }
+    if(t.dataset.delfoto){ delFoto(t.dataset.delfoto); return; }
     if(t.dataset.sec){ S.secao=t.dataset.sec; render(); return; }
     if(t.dataset.cadaba){ S.cadAba=t.dataset.cadaba; render(); return; }
     if(t.dataset.delcat){ var pc=t.dataset.delcat.split("|"); delCatalogo(pc[0],pc[1]); return; }
@@ -1167,6 +1364,9 @@ function bind(){
     if(t.id==="btnCompartilhar"){ compartilharLaudo(); return; }
     if(t.id==="btnImprimir"){ imprimirLaudo(); return; }
     if(t.id==="btnConcluir"){ concluirLote(); return; }
+    if(t.id==="btnAddVisitaG"){ addVisitaGlobal(); return; }
+    if(t.id==="btnAddAcao"){ addAcao(); return; }
+    if(t.id==="btnFoto"){ selecionarFoto(); return; }
     if(t.id==="btnSalvarFicha"){ salvarFicha(); return; }
     if(t.id==="btnFinalizar"){ finalizarProducao(); return; }
     if(t.id==="btnExcluir"){ excluirLote(); return; }
@@ -1185,6 +1385,8 @@ function bind(){
     }
     if(ev.target.id==="f_volFab"){ atualizarDoses(); return; }
     if(ev.target.id==="r_exp"||ev.target.id==="r_bc"){ atualizarUFCprev(); return; }
+    if(ev.target.id==="ac_fer"){ var lt=el("ac_lote"); if(lt) lt.innerHTML=optionsLotesFer(ev.target.value); return; }
+    if(ev.target.id==="fotoInput"){ var file=ev.target.files&&ev.target.files[0]; if(file) uploadFoto(file); ev.target.value=""; return; }
   };
   app.oninput=function(ev){
     if(ev.target.id==="r_mant"){ atualizarUFCprev(); }
