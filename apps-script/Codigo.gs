@@ -31,16 +31,19 @@ const TAB = {
 };
 
 const FERMENTADORES = [
-  { id: 'A1', volume: 1500, tipo: 'A' },
-  { id: 'A2', volume: 1500, tipo: 'A' },
-  { id: 'A3', volume: 1500, tipo: 'A' },
-  { id: 'A4', volume: 1500, tipo: 'A' },
-  { id: 'B1', volume: 1000, tipo: 'B' },
-  { id: 'B2', volume: 1000, tipo: 'B' },
-  { id: 'B3', volume: 1000, tipo: 'B' },
-  { id: 'B4', volume: 1000, tipo: 'B' },
-  { id: 'B5', volume: 1000, tipo: 'B' },
-  { id: 'B6', volume: 1000, tipo: 'B' },
+  { id: 'A1', volume: 1500, tipo: 'A', medida: 'L' },
+  { id: 'A2', volume: 1500, tipo: 'A', medida: 'L' },
+  { id: 'A3', volume: 1500, tipo: 'A', medida: 'L' },
+  { id: 'A4', volume: 1500, tipo: 'A', medida: 'L' },
+  { id: 'B1', volume: 1000, tipo: 'B', medida: 'L' },
+  { id: 'B2', volume: 1000, tipo: 'B', medida: 'L' },
+  { id: 'B3', volume: 1000, tipo: 'B', medida: 'L' },
+  { id: 'B4', volume: 1000, tipo: 'B', medida: 'L' },
+  { id: 'B5', volume: 1000, tipo: 'B', medida: 'L' },
+  { id: 'B6', volume: 1000, tipo: 'B', medida: 'L' },
+  // Salas de multiplicação via sólido (mesmo rastreamento; quantidade em kg).
+  { id: 'S1', volume: '', tipo: 'S', medida: 'kg' },
+  { id: 'S2', volume: '', tipo: 'S', medida: 'kg' },
 ];
 
 const COLS = {
