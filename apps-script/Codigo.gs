@@ -7,10 +7,13 @@
  */
 
 // ─── CONFIGURAÇÃO ──────────────────────────────────────────────────
-// ID da planilha Google usada como banco de dados. Deixe vazio para usar a
-// planilha à qual este script está vinculado (Extensões → Apps Script dentro
-// da planilha). Aqui apontamos para a planilha "BIOFÁBRICA — PRODUÇÃO".
-const SHEET_ID = '15w2RQiLl5QXtt_RSpX2c1F2fDQqpzJpv1hHi3vUfSjQ';
+// ID da planilha Google usada como banco de dados.
+//  • Deixe vazio ('') → o app CRIA automaticamente uma planilha nova em
+//    branco na primeira execução do setup (recomeçar do zero) e guarda o ID.
+//  • Ou cole aqui o ID de uma planilha existente para usar ela.
+const SHEET_ID = '';
+// Nome da planilha nova criada automaticamente (quando SHEET_ID está vazio).
+const NOVA_PLANILHA_NOME = 'BioFábrica — Produção';
 
 const TAB = {
   FERM:    'Fermentadores',
@@ -104,8 +107,28 @@ function doGet() {
 }
 
 // ─── PLANILHA ──────────────────────────────────────────────────────
+// Resolve qual planilha usar, nesta ordem:
+//  1) SHEET_ID fixo no código (se preenchido);
+//  2) planilha vinculada ao script (Extensões → Apps Script dentro da planilha);
+//  3) ID guardado nas propriedades do script (planilha criada automaticamente);
+//  4) cria uma planilha NOVA em branco e guarda o ID (recomeçar do zero).
 function ss_() {
-  return SHEET_ID ? SpreadsheetApp.openById(SHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  if (SHEET_ID) return SpreadsheetApp.openById(SHEET_ID);
+  var vinculada = SpreadsheetApp.getActiveSpreadsheet();
+  if (vinculada) return vinculada;
+  var props = PropertiesService.getScriptProperties();
+  var salvo = props.getProperty('SHEET_ID');
+  if (salvo) {
+    try { return SpreadsheetApp.openById(salvo); } catch (e) { /* recriada abaixo */ }
+  }
+  var nova = SpreadsheetApp.create(NOVA_PLANILHA_NOME);
+  props.setProperty('SHEET_ID', nova.getId());
+  return nova;
+}
+
+/** URL da planilha em uso (útil para achar a planilha nova criada pelo setup). */
+function urlPlanilha() {
+  return ss_().getUrl();
 }
 
 function sheet_(tab) {
@@ -139,7 +162,9 @@ function setup() {
   }
   // Garante a pasta no Drive (e dispara a autorização do Drive para gerar PDFs/fotos).
   pastaArquivos_();
-  return 'Planilha configurada com sucesso.';
+  var url = ss_().getUrl();
+  Logger.log('Planilha pronta: ' + url);
+  return 'Planilha configurada com sucesso.\nPlanilha (banco de dados): ' + url;
 }
 
 /** Adiciona um menu na planilha para rodar o setup facilmente. */

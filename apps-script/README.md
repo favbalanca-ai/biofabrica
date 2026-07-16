@@ -16,13 +16,18 @@ App web para **vários celulares**, com os dados guardados numa **planilha do Go
 
 ## Como instalar (passo a passo, ~10 min)
 
-### 1. Criar a planilha
-1. Acesse <https://sheets.google.com> e crie uma **planilha em branco**.
-2. Dê um nome, por exemplo **"BioFábrica — Produção"**.
+### 1. A planilha (criada automaticamente)
+Não precisa criar planilha à mão. Com `SHEET_ID` vazio no `Codigo.gs` (padrão), ao rodar o
+**`setup`** (passo 4) o app **cria sozinho uma planilha nova em branco** chamada
+*"BioFábrica — Produção"* no seu Drive e passa a usá-la como banco de dados. O `setup`
+mostra o **link da planilha** ao terminar (função `urlPlanilha` também retorna esse link).
+
+> Prefere usar uma planilha específica? Cole o ID dela em `const SHEET_ID = '...'` no topo do `Codigo.gs`.
 
 ### 2. Abrir o editor de script
-1. Na planilha, menu **Extensões → Apps Script**.
-2. Vai abrir o editor de código numa nova aba.
+Como o projeto é **independente** (standalone), abra-o direto:
+1. Acesse o projeto Apps Script (ou crie um em <https://script.google.com>).
+2. É onde você cola/edita o código (ou publica pelo Git com o `clasp` — veja mais abaixo).
 
 ### 3. Colar o código
 1. No editor, apague o conteúdo do arquivo `Código.gs` que veio em branco e **cole todo o
