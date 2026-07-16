@@ -112,6 +112,9 @@
   .fl-step.cur .fl-lb{color:#8a5c00; font-weight:700}
   .fl-line{flex:1; height:2px; background:#d4c4a8; min-width:6px; margin-top:13px}
   .fl-line.done{background:#4a7c59}
+  .alerta{background:#fff4d6; border:1px solid #e6c46a; border-left:4px solid #c8860a; border-radius:9px;
+    padding:12px 14px; margin:12px 0; font-size:14px; color:#6b4c10; line-height:1.5}
+  .alerta .btn{margin-top:8px}
   .stat{background:var(--surface); border:1px solid var(--line); border-top:4px solid var(--green); border-radius:10px; padding:14px}
   .stat b{display:block; font-size:28px}
   .stat span{font-size:12px; color:var(--muted)}
@@ -517,6 +520,8 @@ function textoDoses(inocNome, meioNome, volumeL){
 // Alvo (epoch ms) do fim previsto = início + tempo de produção.
 function alvoFim(l){ if(!l.dtInicio||!l.tempoProducaoH) return null; var t=new Date(l.dtInicio).getTime(); if(isNaN(t)) return null; return t + Number(l.tempoProducaoH)*3600000; }
 function countdownHtml(l){ var a=alvoFim(l); if(!a||l.status==="Concluído"||l.status==="Reprovado") return ""; return '<span class="cd" data-until="'+a+'"></span>'; }
+// Tempo de produção acabou e o lote ainda está em processo (pronto para finalizar).
+function tempoAcabou(l){ var a=alvoFim(l); return !!(a && !l.dtFim && l.status==="Em Processo" && Date.now()>=a); }
 function tickCountdowns(){
   var now=Date.now();
   var els=document.querySelectorAll(".cd[data-until]");
@@ -525,6 +530,16 @@ function tickCountdowns(){
     if(d>0){ var h=Math.floor(d/3600000), m=Math.floor((d%3600000)/60000); sp.textContent="⏳ faltam "+h+"h "+m+"min"; sp.style.color="#8a5c00"; }
     else { var hh=Math.floor(-d/3600000); sp.textContent="⏱ tempo concluído"+(hh>0?(" (há "+hh+"h)"):""); sp.style.color="#2d5c3a"; }
   }
+  // Ao acabar o tempo, mostra o aviso de finalizar — sem atrapalhar quem está digitando.
+  try{
+    if(S.view==="lote"){
+      var l=loteAtual();
+      if(l && tempoAcabou(l) && !document.querySelector(".alerta")){
+        var ae=document.activeElement, tag=ae&&ae.tagName;
+        if(tag!=="INPUT"&&tag!=="SELECT"&&tag!=="TEXTAREA") render();
+      }
+    }
+  }catch(e){}
 }
 // Campo de seleção obrigatória (operador não digita, só escolhe).
 function selNomes(label,id,nomes,cur,extra){
@@ -629,6 +644,7 @@ function viewMapa(){
         +(ativo&&ativo.produto?'<div class="muted"><b>Produto:</b> '+esc(ativo.produto)+'</div>':'')
         +(ativo?progressoHtml(ativo):'')
         +(ativo&&countdownHtml(ativo)?'<div style="margin-top:2px">'+countdownHtml(ativo)+'</div>':'')
+        +(ativo&&tempoAcabou(ativo)?'<div class="muted" style="color:#b5651d;font-weight:700;margin-top:2px">⏰ Tempo concluído — finalizar</div>':'')
         +'<div class="muted">'+ls.length+' lote(s) registrado(s)</div>'
         +'<div class="field" style="margin:10px 0 8px">'+selectStatus(f.id,st,'data-ferstatus="'+f.id+'"')+'</div>'
         +'<div class="btn-row">'
@@ -931,6 +947,7 @@ function viewLote(){
     +'<button class="voltar" data-hist="'+S.aFer+'">← '+esc(S.aFer)+' — Histórico</button>'
     +'<div class="row"><h1 style="font-family:monospace;font-size:16px">'+esc(l.loteNum||l.id)+'</h1>'+badge(l.status)+'</div>'
     +fluxoStepper(l)
+    +(tempoAcabou(l)?'<div class="alerta">⏰ <b>Tempo de produção concluído.</b> Encerre a produção para seguir ao laudo.<br><button class="btn small" id="btnFinalizar">🏁 Finalizar produção → Laudo</button></div>':'')
     +(countdownHtml(l)?'<div class="cdbar">'+progressoHtml(l)+countdownHtml(l)+'</div>':'')
     +'<div style="height:8px"></div><div class="segs">'+segs+'</div>';
   if(S.secao==="ficha") h+=secFicha(l);
@@ -956,7 +973,7 @@ function secFicha(l){
   var recInoc=receitaDe("inoculos",l.inoculo), recMeio=receitaDe("meios",l.meio);
   var ferVol=Number(ferConfig(l.fermentador).volume)||0;
   var volFab=l.volumeFab||(ferVol||"");
-  var finAberta = ["Aguardando Análise","Em Análise","Concluído"].indexOf(l.status)>=0 || l.dtFim || l.temperatura || l.ph;
+  var finAberta = ["Aguardando Análise","Em Análise","Concluído"].indexOf(l.status)>=0 || l.dtFim || l.temperatura || l.ph || tempoAcabou(l);
   return '<div class="card"><div class="sec-title">Identificação do produto</div>'
     +field("Nº do Lote (interno)","f_loteNum",l.loteNum)
     +'<div class="field"><label>Status</label><select id="f_status">'+stOpts+'</select></div>'
@@ -1267,17 +1284,36 @@ function salvarFicha(){
   }
   persistLote(l,"Ficha salva.");
 }
+// Preenche sozinho o que já dá para saber, ao finalizar a produção.
+function autoPreencherFinalizacao(l){
+  var c=consolidarLote(l);
+  var vazio=function(v){ return v===undefined||v===null||!String(v).trim(); };
+  // Temperatura e pH = média das leituras registradas (se não foram digitadas).
+  if(vazio(l.temperatura) && c.tMed!==null) l.temperatura=c.tMed.toFixed(1).replace('.',',');
+  if(vazio(l.ph) && c.phMed!==null) l.ph=c.phMed.toFixed(1).replace('.',',');
+  // Volume final = volume de fabricação (se não foi informado).
+  if(vazio(l.volumeFinal) && !vazio(l.volumeFab)) l.volumeFinal=l.volumeFab;
+  // Datas do laudo a partir do que já se sabe.
+  var hoje=nowDate();
+  var dtFimDate=l.dtFim?String(l.dtFim).split("T")[0]:hoje;
+  if(vazio(l.dataColeta)) l.dataColeta=dtFimDate;
+  if(vazio(l.dataRecebimento)) l.dataRecebimento=dtFimDate;
+  if(vazio(l.dataAnalise)) l.dataAnalise=hoje;
+  if(vazio(l.responsavelColeta)) l.responsavelColeta=l.operador||"";
+  if(vazio(l.responsavelAnalise)) l.responsavelAnalise=l.operador||"";
+}
 function finalizarProducao(){
   var l=loteAtual(); if(!l) return;
-  coletarFicha(l);
+  if(el("f_loteNum")) coletarFicha(l);   // só coleta se a Ficha estiver aberta (evita apagar dados)
   var faltam=[];
   if(!l.produto || !l.produto.trim()) faltam.push("Nome do produto");
   if(!l.microrganismo || !l.microrganismo.trim()) faltam.push("Organismo");
   if(faltam.length){ toast("Preencha antes de finalizar: "+faltam.join(", "),"err"); return; }
   if(!l.dtFim) l.dtFim=nowDT();          // data final = agora, se ainda não preenchida
+  autoPreencherFinalizacao(l);            // preenche temp/pH/volume/datas automaticamente
   if(l.status==="Em Processo"||l.status==="Disponível"||!l.status) l.status="Aguardando Análise";
   S.secao="relatorio";                    // segue direto para o laudo
-  persistLote(l,"Produção finalizada. Preencha o laudo.");
+  persistLote(l,"Produção finalizada. Confira o laudo — já preenchi o que dava.");
 }
 
 function coletarRelatorio(l){
@@ -1322,6 +1358,7 @@ function marcarEmAnalise(){
   var l=loteAtual(); if(!l) return;
   if(l.status==="Aguardando Análise"){
     l.status="Em Análise";
+    l.dataEmissao=nowDate();   // data de emissão = quando o laudo é gerado
     api.salvarLote(l);
     var fs=ferStatusDeLote(l.status);
     S.estado.fermentadores[l.fermentador]=fs; api.setFermentadorStatus(l.fermentador,fs);
