@@ -1002,6 +1002,10 @@ function montarLaudo(l){
   L.push("Lote meio de cultura: "+(l.loteMeio||"—"));
   L.push("Temperatura: "+(l.temperatura||"N/A")+"    pH: "+(l.ph||"N/A"));
   L.push(rotuloUnidade(l.fermentador)+": "+nomeUnidade(l.fermentador)+" ("+capUnidade(f)+")");
+  if(ehSala(l.fermentador)){
+    if(l.volumeFab) L.push("Quantidade de substrato: "+l.volumeFab+" kg");
+    if(l.numeroSacos) L.push("Número de sacos: "+l.numeroSacos);
+  }
   L.push("Data da multiplicação: "+(l.dataMultiplicacao?fmtDate(l.dataMultiplicacao):"—"));
   L.push("Data da coleta: "+(l.dataColeta?fmtDate(l.dataColeta):"—"));
   L.push("Responsável pela coleta: "+(l.responsavelColeta||"—"));
@@ -1075,6 +1079,7 @@ function secFicha(l){
     +'<div class="card"><div class="sec-title">'+(ehSala(l.fermentador)?"Substrato e insumos":"Volume e insumos")+'</div>'
     +(ehSala(l.fermentador)
         ? fieldNum("Quantidade de substrato (kg)","f_volFab",l.volumeFab,"Ex: 100")
+          +fieldNum("Número de sacos","f_nSacos",l.numeroSacos,"Ex: 40")
         : volFabSelect(volFab,ferVol))
     +'<div id="f_doses" class="dosebox">'+textoDoses(l.inoculo,l.meio,volFab,medidaDe(l.fermentador))+'</div>'
     +field("Lote do inóculo","f_loteInoculo",l.loteInoculo,"text","Ex: PA00170022")
@@ -1124,7 +1129,7 @@ function novoLote(ferId){
     dataRecebimento:"",dataAnalise:"",tecnicaPlaqueamento:"Spread plate",diluicoesPlaqueadas:"10-3 , 10-4 e 10-5",
     tempIncubacao:"30±02 °C",tempoIncubacao:"24 a 48 h",choqueTermico:"Sim",coloracaoGram:"Sim",responsavelAnalise:"",
     resultadosQualitativos:"",outrosMicrorganismos:"",resultadoQuantitativo:"",
-    inoculo:"",meio:"",tempoProducaoH:"",volumeFab:"",loteInoculo:"",
+    inoculo:"",meio:"",tempoProducaoH:"",volumeFab:"",loteInoculo:"",numeroSacos:"",
     criadoPor:"",criadoEm:"",atualizadoEm:"" };
   overlay(true);
   api.salvarLote(lote).then(function(salvo){
@@ -1143,6 +1148,7 @@ function coletarFicha(l){
     microrganismo:val("f_microrganismo"), inoculo:val("f_inoculo"), meio:val("f_meio"),
     tempoProducaoH:val("f_tempoH"), loteMeio:val("f_loteMeio"), loteInoculo:val("f_loteInoculo"),
     volumeFab:val("f_volFab"), dtInicio:val("f_dtInicio"), operador:val("f_operador") });
+  if(el("f_nSacos")) l.numeroSacos=val("f_nSacos"); // só nas salas (sólido)
   l.loteProduto=l.loteNum;
   if(!l.dataMultiplicacao && l.dtInicio) l.dataMultiplicacao=String(l.dtInicio).split("T")[0];
 }
@@ -1336,6 +1342,7 @@ function laudoPrintHtml(l){
       +kv("Tipo de compressor",l.tipoCompressor)+kv("Nome do produto",l.produto)+kv("Microrganismo",l.microrganismo)
       +kv("Lote do produto",l.loteProduto||l.loteNum)+kv("Lote meio de cultura",l.loteMeio)
       +kv("Temperatura",l.temperatura||"N/A")+kv("pH",l.ph||"N/A")+kv(rotuloUnidade(l.fermentador),nomeUnidade(l.fermentador)+" ("+capUnidade(f)+")")
+      +(ehSala(l.fermentador)?(kv("Quantidade de substrato",l.volumeFab?l.volumeFab+" kg":"")+kv("Número de sacos",l.numeroSacos)):"")
       +kv("Data da multiplicação",l.dataMultiplicacao?fmtDate(l.dataMultiplicacao):"—")+kv("Data da coleta",l.dataColeta?fmtDate(l.dataColeta):"—")
       +kv("Responsável pela coleta",l.responsavelColeta)+kv("Outras informações",l.outrasInformacoes)+'</table>'
     +'<table><tr class="sec"><td colspan="2">Dados da análise</td></tr>'
