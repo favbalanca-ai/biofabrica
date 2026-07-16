@@ -107,6 +107,27 @@
   .stat{background:var(--surface2); border:1px solid var(--line); border-top:4px solid var(--green); border-radius:10px; padding:14px; text-align:center}
   .stat b{display:block}
   .stat span{font-size:11px; color:var(--muted)}
+  /* Camada 3: laudo */
+  .ufcrow{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  .ufcrow input{width:80px; text-align:center; font-size:20px; font-weight:700}
+  .ufcrow select{width:auto; min-width:96px; font-size:18px; font-weight:700}
+  .ufcrow .x{font-size:20px; font-weight:700; color:var(--muted)}
+  .ufcprev{margin:8px 0 4px; font-size:16px; font-weight:700; color:var(--green)}
+  pre.laudo{white-space:pre-wrap; word-wrap:break-word; background:var(--surface2); border:1px solid #d4c4a8;
+    border-radius:8px; padding:14px; font-family:Georgia,serif; font-size:13.5px; line-height:1.5; color:var(--ink)}
+  /* Área de impressão (Salvar PDF pelo navegador) — some da tela, aparece só ao imprimir */
+  #laudoPrint{display:none}
+  @media print{
+    body{padding:0; background:#fff}
+    body > *{display:none !important}
+    #laudoPrint{display:block !important}
+    #laudoPrint table{width:100%; border-collapse:collapse; margin:6px 0; font-size:11px}
+    #laudoPrint td{border:1px solid #999; padding:5px 7px; vertical-align:top}
+    #laudoPrint .k{width:42%; font-weight:bold; background:#f6f2e8}
+    #laudoPrint .sec td{background:#e9e2d0; font-weight:bold; text-align:center; text-transform:uppercase}
+    #laudoPrint h1{font-size:15px; text-align:center; margin:0}
+    #laudoPrint .sub{text-align:center; font-size:10px; color:#555; margin:0 0 8px}
+  }
   #overlay{position:fixed; inset:0; background:rgba(60,45,26,.35); display:none; align-items:center; justify-content:center; z-index:200}
   #overlay .box{background:var(--surface); border-radius:10px; padding:16px 22px; font-size:14px; color:var(--brand)}
   #toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(84px + env(safe-area-inset-bottom)); z-index:300; display:none;
@@ -137,6 +158,7 @@
 <div id="overlay"><div class="box">Carregando…</div></div>
 <div id="toast"></div>
 <nav id="tabbar"></nav>
+<div id="laudoPrint"></div>
 
 <script>
 // ══════════════════════════════════════════════════════════════════
@@ -171,6 +193,20 @@ var FAIXAS=[
 ];
 var FAIXA_PADRAO={ph:[6.0,7.5], temp:[28,34]};
 function faixaDe(micro){ micro=(micro||"").toLowerCase(); for(var i=0;i<FAIXAS.length;i++){ if(micro.indexOf(FAIXAS[i].chave)>=0) return FAIXAS[i]; } return FAIXA_PADRAO; }
+// Laudo (Relatório de Análise Microbiológica On Farm)
+var LAUDO_TITULO = "RELATÓRIO DE ANÁLISE MICROBIOLÓGICA ON FARM";
+var LAUDO_ENDERECO = "";
+var LAUDO_CONTATO = "";
+var LAUDO_CONSIDERACOES = [
+  "A coloração de Gram foi realizada utilizando uma alíquota da amostra líquida.",
+  "A amostra será retida para contraprova por 7 dias, contados a partir da emissão do relatório.",
+];
+var TIPO_AMOSTRA = ["Água","Inóculo","Meio de cultura","Multiplicado","Outro"];
+var MEIO_CULTURA = ["BAC","SM","BUG","CATP","FINISH","WHITE","Não se aplica"];
+var TIPO_COMPRESSOR = ["Odontológico/Parafuso","Radial","Venturi"];
+var SIM_NAO = ["Não","Sim"];
+var GRAM_OPT = ["Sim","Não"];
+var OUTROS_MICRO = ["","Ausente","Presente","BC (baixa contagem)"];
 
 // ─── HELPERS ───────────────────────────────────────────────────────
 function el(id){ return document.getElementById(id); }
@@ -181,6 +217,7 @@ function p2(n){ return (n<10?"0":"")+n; }
 function nowDT(){ var d=new Date(); return d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate())+"T"+p2(d.getHours())+":"+p2(d.getMinutes()); }
 function nowDate(){ var d=new Date(); return d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate()); }
 function fmt(s){ if(!s) return "—"; var d=new Date(s); if(isNaN(d)) return String(s); return d.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}); }
+function fmtDate(s){ if(!s) return "—"; var p=String(s).split("T")[0].split("-"); if(p.length<3) return String(s); return p[2]+"/"+p[1]+"/"+p[0]; }
 function makeId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function toast(m,tipo){
   var t=el("toast");
@@ -392,6 +429,41 @@ function parseUFC(s){
   if(m) return parseFloat(m[1])*Math.pow(10,parseInt(m[2],10));
   var n=parseFloat(t); return isNaN(n)?null:n;
 }
+// Entrada fácil do resultado UFC/mL: número (mantissa) + potência de 10.
+function toSup(s){ var sup={'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','-':'⁻'};
+  return String(s).split("").map(function(c){return sup[c]||c;}).join(""); }
+function ufcParts(s){
+  if(!s) return {mant:"",exp:"",bc:false};
+  var t=String(s).trim();
+  if(/^bc$/i.test(t)) return {mant:"",exp:"",bc:true};
+  var sup={'⁰':'0','¹':'1','²':'2','³':'3','⁴':'4','⁵':'5','⁶':'6','⁷':'7','⁸':'8','⁹':'9'};
+  var norm=t.toLowerCase().replace(/ufc\/?ml/g,'').replace(/\s/g,'').replace(',','.').replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g,function(c){return sup[c];});
+  var m=norm.match(/^([0-9.]+)[x×*]10\^?([0-9]+)$/);
+  if(m) return {mant:m[1], exp:m[2], bc:false};
+  return {mant:t.replace(/ufc\/?ml/ig,'').trim(), exp:"", bc:false};
+}
+function composeUFC(mant,exp){
+  mant=String(mant||"").trim().replace(',','.'); exp=String(exp||"").trim();
+  if(!mant && !exp) return "";
+  if(exp) return (mant||"1")+" × 10"+toSup(exp);
+  return mant;
+}
+function ufcInput(saved){
+  var p=ufcParts(saved); var exps=[3,4,5,6,7,8,9,10,11,12];
+  var expOpts='<option value="">10ⁿ</option>'+exps.map(function(e){ return '<option value="'+e+'"'+(String(e)===String(p.exp)?" selected":"")+'>10'+toSup(e)+'</option>'; }).join("");
+  return '<div class="field"><label>Microrganismo de interesse — com choque térmico (UFC/mL)</label>'
+    +'<p class="muted" style="margin:0 0 6px">Digite o número e escolha a potência de 10. Ex.: <b>1</b> × <b>10⁹</b>.</p>'
+    +'<div class="ufcrow"><input id="r_mant" type="number" inputmode="decimal" step="0.1" value="'+esc(p.mant)+'" placeholder="1">'
+      +'<span class="x">×</span><select id="r_exp">'+expOpts+'</select><span class="x">UFC/mL</span></div>'
+    +'<div class="ufcprev" id="r_ufc_prev">'+(p.bc?"= BC (baixa contagem)":("= "+(composeUFC(p.mant,p.exp)||"—")+" UFC/mL"))+'</div>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);text-transform:none;letter-spacing:0"><input type="checkbox" id="r_bc" style="width:auto"'+(p.bc?" checked":"")+'> BC — baixa contagem (não atingiu 30–300 colônias)</label>'
+    +'</div>';
+}
+function atualizarUFCprev(){
+  var prev=el("r_ufc_prev"); if(!prev) return;
+  if(el("r_bc") && el("r_bc").checked){ prev.textContent="= BC (baixa contagem)"; return; }
+  prev.textContent="= "+(composeUFC(val("r_mant"),val("r_exp"))||"—")+" UFC/mL";
+}
 // Consolida um lote: condições de processo (médias de pH/temp e % na faixa) + resultado.
 function consolidarLote(l){
   var meds=medicoesDe(l.id);
@@ -586,6 +658,8 @@ function viewLote(){
   if(S.secao==="ficha") h+=secFicha(l);
   else if(S.secao==="monitor") h+=secMonitor(l);
   else if(S.secao==="ajustes") h+=secAjustes(l);
+  else if(S.secao==="relatorio") h+=secRelatorio(l);
+  else if(S.secao==="laudo") h+=secLaudo(l);
   else h+='<div class="vazio">🚧 <b>'+esc((SECS.find(function(s){return s[0]===S.secao;})||[])[1]||"")+'</b><br>Esta parte entra na próxima camada da reconstrução.</div>';
   return h;
 }
@@ -661,6 +735,102 @@ function secAjustes(l){
       +(a.obs?'<div class="muted">📝 '+esc(a.obs)+'</div>':'')+'</div>';
   });
   return h;
+}
+
+// ── Relatório (campos do laudo) ──
+function secRelatorio(l){
+  return '<div class="card"><div class="sec-title">Dados da amostra</div>'
+    +'<div class="grid2">'+field("Nº do relatório","r_num",l.numeroRelatorio,"text","Ex: 004")+field("Data de emissão","r_emissao",l.dataEmissao,"date")+'</div>'
+    +field("Cliente / Fazenda","r_cliente",l.cliente||CLIENTE_PADRAO)
+    +fieldSel("Tipo de amostra","r_tipoAmostra",TIPO_AMOSTRA,l.tipoAmostra||"Multiplicado")
+    +field("Se \"Outro\", qual?","r_tipoOutro",l.tipoAmostraOutro,"text","")
+    +fieldSel("Meio de cultura","r_meio",MEIO_CULTURA,l.meioCultura||"BAC")
+    +fieldSel("Tipo de compressor","r_compressor",TIPO_COMPRESSOR,l.tipoCompressor||"Radial")
+    +field("Nome do produto","r_produto",l.produto,"text","Ex: Solu Leaf")
+    +selNomes("Microrganismo","r_micro",nomesOrg(),l.microrganismo)
+    +field("Lote do produto","r_loteProd",l.loteProduto||l.loteNum,"text","Ex: PA00130034")
+    +field("Lote meio de cultura","r_loteMeioCult",l.loteMeio,"text","Ex: PA00180174")
+    +'<div class="grid2">'+field("Temperatura","r_tempAmostra",l.temperatura,"text","Ex: 30 ou N/A")+field("pH","r_phAmostra",l.ph,"text","Ex: 6.5 ou N/A")+'</div>'
+    +'<div class="grid2">'+field("Data da multiplicação (= início)","r_dtMult",l.dataMultiplicacao||(l.dtInicio?String(l.dtInicio).split("T")[0]:""),"date")+field("Data da coleta","r_dtColeta",l.dataColeta,"date")+'</div>'
+    +selNomes("Responsável pela coleta (funcionário)","r_respColeta",nomesFunc(),l.responsavelColeta||l.operador)
+    +fieldArea("Outras informações","r_outras",l.outrasInformacoes,"Ex: análise qualitativa por microscopia…")
+    +'</div>'
+    +'<div class="card"><div class="sec-title">Dados da análise</div>'
+    +'<div class="grid2">'+field("Data de recebimento","r_dtReceb",l.dataRecebimento,"date")+field("Data da análise","r_dtAnalise",l.dataAnalise,"date")+'</div>'
+    +field("Técnica de plaqueamento","r_tecnica",l.tecnicaPlaqueamento,"text","Spread plate")
+    +field("Diluições plaqueadas","r_diluicoes",l.diluicoesPlaqueadas,"text","10-3 , 10-4 e 10-5")
+    +'<div class="grid2">'+field("Temp. de incubação","r_tempInc",l.tempIncubacao,"text","30±02 °C")+field("Tempo de incubação","r_tempoInc",l.tempoIncubacao,"text","24 a 48 h")+'</div>'
+    +'<div class="grid2">'+fieldSel("Choque térmico","r_choque",SIM_NAO,l.choqueTermico||"Sim")+fieldSel("Coloração de Gram","r_gram",GRAM_OPT,l.coloracaoGram||"Sim")+'</div>'
+    +selNomes("Responsável pela análise (analista)","r_respAnalise",nomesFunc(),l.responsavelAnalise||l.operador)
+    +'</div>'
+    +'<div class="card"><div class="sec-title">Resultados</div>'
+    +ufcInput(l.resultadoQuantitativo)
+    +fieldSel("Presença de outros microrganismos","r_outros",OUTROS_MICRO,l.outrosMicrorganismos)
+    +'</div>'
+    +'<button class="btn" id="btnSalvarRelatorio">💾 Salvar Relatório</button>';
+}
+// ── Laudo (tela + copiar + compartilhar + imprimir/PDF + concluir) ──
+function secLaudo(l){
+  return '<div class="card"><div class="sec-title">Laudo (Relatório de Análise)</div>'
+    +'<pre class="laudo" id="laudoTxt">'+esc(montarLaudo(l))+'</pre>'
+    +'<div class="btn-row" style="margin-top:8px">'
+      +'<button class="btn sec small" id="btnCopiar">📋 Copiar</button>'
+      +'<button class="btn sec small" id="btnCompartilhar">📤 Compartilhar / WhatsApp</button>'
+    +'</div>'
+    +'<p class="muted" style="margin-top:8px">Preencha os campos na aba <b>Relatório</b> para completar o laudo.</p></div>'
+    +'<div class="card"><div class="sec-title">Salvar em PDF</div>'
+    +'<p class="muted" style="margin:0 0 8px">Gera o laudo formatado e abre a impressão do navegador — escolha <b>Salvar como PDF</b> (funciona no celular).</p>'
+    +'<button class="btn green" id="btnImprimir">🖨️ Imprimir / Salvar PDF</button></div>'
+    +(l.status==="Concluído"
+        ? '<div class="card" style="border-left:5px solid #3d6b3d"><div class="sec-title">Lote concluído</div><p class="muted" style="margin:0">✅ Fermentador '+esc(l.fermentador)+' liberado (Disponível).</p></div>'
+        : '<button class="btn green" id="btnConcluir">✅ Concluir lote (libera o fermentador)</button>');
+}
+function montarLaudo(l){
+  var f=ferConfig(l.fermentador); var L=[];
+  L.push("*"+LAUDO_TITULO+"*");
+  if(LAUDO_ENDERECO) L.push(LAUDO_ENDERECO);
+  if(LAUDO_CONTATO) L.push("Contato: "+LAUDO_CONTATO);
+  L.push("");
+  L.push("*Nº do Relatório:* "+(l.numeroRelatorio||"—")+"    *Emissão:* "+(l.dataEmissao?fmtDate(l.dataEmissao):"—"));
+  L.push("");
+  L.push("*DADOS DA AMOSTRA*");
+  L.push("Cliente/Fazenda: "+(l.cliente||CLIENTE_PADRAO));
+  L.push("Tipo de amostra: "+(l.tipoAmostra||"—")+(l.tipoAmostra==="Outro"&&l.tipoAmostraOutro?" ("+l.tipoAmostraOutro+")":""));
+  L.push("Meio de cultura: "+(l.meioCultura||"—"));
+  L.push("Tipo de compressor: "+(l.tipoCompressor||"—"));
+  L.push("Nome do produto: "+(l.produto||"—"));
+  L.push("Microrganismo: "+(l.microrganismo||"—"));
+  L.push("Lote do produto: "+(l.loteProduto||l.loteNum||"—"));
+  L.push("Lote meio de cultura: "+(l.loteMeio||"—"));
+  L.push("Temperatura: "+(l.temperatura||"N/A")+"    pH: "+(l.ph||"N/A"));
+  L.push("Fermentador: "+l.fermentador+" ("+Number(f.volume).toLocaleString("pt-BR")+" L)");
+  L.push("Data da multiplicação: "+(l.dataMultiplicacao?fmtDate(l.dataMultiplicacao):"—"));
+  L.push("Data da coleta: "+(l.dataColeta?fmtDate(l.dataColeta):"—"));
+  L.push("Responsável pela coleta: "+(l.responsavelColeta||"—"));
+  if(l.outrasInformacoes) L.push("Outras informações: "+l.outrasInformacoes);
+  L.push("");
+  L.push("*DADOS DA ANÁLISE*");
+  L.push("Data de recebimento: "+(l.dataRecebimento?fmtDate(l.dataRecebimento):"—"));
+  L.push("Data da análise: "+(l.dataAnalise?fmtDate(l.dataAnalise):"—"));
+  L.push("Técnica de plaqueamento: "+(l.tecnicaPlaqueamento||"Spread plate"));
+  L.push("Diluições plaqueadas: "+(l.diluicoesPlaqueadas||"10-3 , 10-4 e 10-5"));
+  L.push("Temperatura de incubação: "+(l.tempIncubacao||"30±02 °C"));
+  L.push("Tempo de incubação: "+(l.tempoIncubacao||"24 a 48 h"));
+  L.push("Choque térmico: "+(l.choqueTermico||"—"));
+  L.push("Coloração de Gram: "+(l.coloracaoGram||"—"));
+  L.push("Responsável: "+(l.responsavelAnalise||"—"));
+  L.push("");
+  L.push("*RESULTADOS (UFC/mL)*");
+  var conc=l.resultadoQuantitativo||"";
+  if(conc && !/ufc/i.test(conc)) conc=conc+" UFC/mL";
+  L.push("Microrganismo de interesse (com choque térmico): "+(conc||"—"));
+  L.push("Presença de outros microrganismos: "+(l.outrosMicrorganismos||"—"));
+  L.push("");
+  L.push("*CONSIDERAÇÕES*");
+  LAUDO_CONSIDERACOES.forEach(function(c){ L.push("• "+c); });
+  L.push("");
+  L.push("_Fazenda Água Viva · BioFábrica_");
+  return L.join("\n");
 }
 
 function volFabSelect(cur, ferVol){
@@ -874,6 +1044,86 @@ function delAjuste(id){
     .catch(function(){ overlay(false); toast("Erro","err"); });
 }
 
+// ── Relatório ──
+function coletarRelatorio(l){
+  Object.assign(l,{
+    produto:val("r_produto"), microrganismo:val("r_micro"), loteProduto:val("r_loteProd"),
+    loteMeio:val("r_loteMeioCult"), temperatura:val("r_tempAmostra"), ph:val("r_phAmostra"),
+    numeroRelatorio:val("r_num"), dataEmissao:val("r_emissao"), cliente:val("r_cliente"),
+    tipoAmostra:val("r_tipoAmostra"), tipoAmostraOutro:val("r_tipoOutro"), meioCultura:val("r_meio"),
+    tipoCompressor:val("r_compressor"), dataMultiplicacao:val("r_dtMult"), dataColeta:val("r_dtColeta"),
+    responsavelColeta:val("r_respColeta"), outrasInformacoes:val("r_outras"),
+    dataRecebimento:val("r_dtReceb"), dataAnalise:val("r_dtAnalise"), tecnicaPlaqueamento:val("r_tecnica"),
+    diluicoesPlaqueadas:val("r_diluicoes"), tempIncubacao:val("r_tempInc"), tempoIncubacao:val("r_tempoInc"),
+    choqueTermico:val("r_choque"), coloracaoGram:val("r_gram"), responsavelAnalise:val("r_respAnalise"),
+    outrosMicrorganismos:val("r_outros"),
+    resultadoQuantitativo:(el("r_bc")&&el("r_bc").checked)?"BC":composeUFC(val("r_mant"),val("r_exp"))
+  });
+}
+function salvarRelatorio(){ var l=loteAtual(); if(!l) return; coletarRelatorio(l); persistLote(l,"Relatório salvo."); }
+
+// ── Laudo: emitir move para "Em Análise"; concluir libera o fermentador ──
+function marcarEmAnalise(){
+  var l=loteAtual(); if(!l) return;
+  if(l.status==="Aguardando Análise"){
+    l.status="Em Análise"; l.dataEmissao=nowDate();
+    api.salvarLote(l);
+    var fs=ferStatusDeLote(l.status); S.estado.fermentadores[l.fermentador]=fs; api.setFermentadorStatus(l.fermentador,fs);
+    render(); toast("Lote em análise.");
+  }
+}
+function concluirLote(){
+  var l=loteAtual(); if(!l) return;
+  if(!confirm("Concluir este lote? O fermentador "+l.fermentador+" volta a ficar Disponível.")) return;
+  l.status="Concluído"; if(!l.dtFim) l.dtFim=nowDT();
+  persistLote(l,"Lote concluído. Fermentador liberado.");
+}
+function copiarLaudo(){
+  var txt=el("laudoTxt").textContent;
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){ toast("Laudo copiado."); },function(){ toast("Não foi possível copiar","err"); });
+  } else {
+    var ta=document.createElement("textarea"); ta.value=txt; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); toast("Laudo copiado."); }catch(e){ toast("Não foi possível copiar","err"); }
+    document.body.removeChild(ta);
+  }
+}
+function compartilharLaudo(){
+  var l=loteAtual(); if(!l) return;
+  var txt=montarLaudo(l).replace(/\*/g,"").replace(/_/g,"");
+  if(navigator.share){ navigator.share({title:"Laudo — "+(l.produto||l.loteNum||""), text:txt}).then(marcarEmAnalise).catch(function(){}); return; }
+  window.open("https://wa.me/?text="+encodeURIComponent(txt),"_blank"); marcarEmAnalise();
+}
+// Monta o laudo formatado (tabela) e chama a impressão do navegador (Salvar como PDF).
+function laudoPrintHtml(l){
+  var f=ferConfig(l.fermentador);
+  var conc=l.resultadoQuantitativo||""; if(conc && !/ufc/i.test(conc)) conc=conc+" UFC/mL";
+  function kv(k,v){ return '<tr><td class="k">'+esc(k)+'</td><td>'+(v==null||v===""?"—":esc(v))+'</td></tr>'; }
+  return '<h1>'+esc(LAUDO_TITULO)+'</h1><div class="sub">Fazenda Água Viva · BioFábrica</div>'
+    +'<table><tr><td class="k">Nº do Relatório</td><td>'+esc(l.numeroRelatorio||"—")+'</td><td class="k">Emissão</td><td>'+(l.dataEmissao?fmtDate(l.dataEmissao):"—")+'</td></tr></table>'
+    +'<table><tr class="sec"><td colspan="2">Dados da amostra</td></tr>'
+      +kv("Cliente / Fazenda",l.cliente||CLIENTE_PADRAO)+kv("Tipo de amostra",l.tipoAmostra)+kv("Meio de cultura",l.meioCultura)
+      +kv("Tipo de compressor",l.tipoCompressor)+kv("Nome do produto",l.produto)+kv("Microrganismo",l.microrganismo)
+      +kv("Lote do produto",l.loteProduto||l.loteNum)+kv("Lote meio de cultura",l.loteMeio)
+      +kv("Temperatura",l.temperatura||"N/A")+kv("pH",l.ph||"N/A")+kv("Fermentador",l.fermentador+" ("+Number(f.volume).toLocaleString("pt-BR")+" L)")
+      +kv("Data da multiplicação",l.dataMultiplicacao?fmtDate(l.dataMultiplicacao):"—")+kv("Data da coleta",l.dataColeta?fmtDate(l.dataColeta):"—")
+      +kv("Responsável pela coleta",l.responsavelColeta)+kv("Outras informações",l.outrasInformacoes)+'</table>'
+    +'<table><tr class="sec"><td colspan="2">Dados da análise</td></tr>'
+      +kv("Data de recebimento",l.dataRecebimento?fmtDate(l.dataRecebimento):"—")+kv("Data da análise",l.dataAnalise?fmtDate(l.dataAnalise):"—")
+      +kv("Técnica de plaqueamento",l.tecnicaPlaqueamento||"Spread plate")+kv("Diluições plaqueadas",l.diluicoesPlaqueadas||"10-3 , 10-4 e 10-5")
+      +kv("Temperatura de incubação",l.tempIncubacao||"30±02 °C")+kv("Tempo de incubação",l.tempoIncubacao||"24 a 48 h")
+      +kv("Choque térmico",l.choqueTermico)+kv("Coloração de Gram",l.coloracaoGram)+kv("Responsável",l.responsavelAnalise)+'</table>'
+    +'<table><tr class="sec"><td colspan="2">Resultados</td></tr>'
+      +kv("Microrganismo de interesse (com choque térmico)",conc||"—")+kv("Presença de outros microrganismos",l.outrosMicrorganismos)+'</table>'
+    +'<table><tr class="sec"><td colspan="2">Considerações</td></tr><tr><td colspan="2">'+LAUDO_CONSIDERACOES.map(function(c){return "• "+esc(c);}).join("<br>")+'</td></tr></table>';
+}
+function imprimirLaudo(){
+  var l=loteAtual(); if(!l) return;
+  var pr=el("laudoPrint"); if(pr){ pr.innerHTML=laudoPrintHtml(l); }
+  marcarEmAnalise();
+  setTimeout(function(){ window.print(); }, 50);
+}
+
 // ─── PRODUTO → PREENCHE ORGANISMO/INÓCULO/MEIO + DOSES ─────────────
 function atualizarDoses(){ var box=el("f_doses"); if(!box) return; box.innerHTML=textoDoses(val("f_inoculo"),val("f_meio"),val("f_volFab")); }
 function setSelect(id,valor){
@@ -896,7 +1146,7 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-sec],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-sec],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -912,6 +1162,11 @@ function bind(){
     if(t.dataset.delajuste){ delAjuste(t.dataset.delajuste); return; }
     if(t.id==="btnAddMed"){ addMedicao(); return; }
     if(t.id==="btnAddAjuste"){ addAjuste(); return; }
+    if(t.id==="btnSalvarRelatorio"){ salvarRelatorio(); return; }
+    if(t.id==="btnCopiar"){ copiarLaudo(); return; }
+    if(t.id==="btnCompartilhar"){ compartilharLaudo(); return; }
+    if(t.id==="btnImprimir"){ imprimirLaudo(); return; }
+    if(t.id==="btnConcluir"){ concluirLote(); return; }
     if(t.id==="btnSalvarFicha"){ salvarFicha(); return; }
     if(t.id==="btnFinalizar"){ finalizarProducao(); return; }
     if(t.id==="btnExcluir"){ excluirLote(); return; }
@@ -929,6 +1184,10 @@ function bind(){
       atualizarDoses(); return;
     }
     if(ev.target.id==="f_volFab"){ atualizarDoses(); return; }
+    if(ev.target.id==="r_exp"||ev.target.id==="r_bc"){ atualizarUFCprev(); return; }
+  };
+  app.oninput=function(ev){
+    if(ev.target.id==="r_mant"){ atualizarUFCprev(); }
   };
 }
 
