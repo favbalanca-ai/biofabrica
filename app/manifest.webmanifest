@@ -1,0 +1,14 @@
+{
+  "name": "BioFábrica · Controle de Produção",
+  "short_name": "BioFábrica",
+  "description": "Controle de produção da BioFábrica — Fazenda Água Viva",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3ecdf",
+  "theme_color": "#33260f",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

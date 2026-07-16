@@ -1,52 +1,51 @@
 # BioFábrica · Controle de Produção
 
 App para **registro e controle do processo de produção da BioFábrica** (Fazenda Água Viva):
-fermentadores, lotes de bioinsumos, visitas/coletas, ajustes e monitoramento de processo,
-análise de dados e emissão do **laudo por WhatsApp e PDF**.
+fermentadores, lotes de bioinsumos, cadastros, fluxo de produção, laudo e análise.
 
-> **O app** fica na pasta [`apps-script/`](apps-script/) — web app para **vários celulares**,
-> com os dados numa **planilha do Google Sheets** (banco de dados criado automaticamente), sem servidor.
->
-> ➡️ **Instalação passo a passo:** [`apps-script/README.md`](apps-script/README.md)
-> · **Publicar do Git (clasp) e deploy automático:** ver o mesmo README.
+> **O app roda no GitHub Pages** (igual aos outros apps da fazenda): abre pelo endereço
+> `github.io`, funciona **offline**, instala na tela inicial (**PWA**) e guarda os dados
+> **no próprio aparelho** (localStorage). A pasta do app é [`app/`](app/).
+
+## Como funciona
+
+- **Onde roda:** GitHub Pages — a página inicial (`index.html`) encaminha para [`app/`](app/),
+  que é o app de verdade. Não depende do `script.google.com`.
+- **Dados:** ficam **no aparelho** (localStorage). Cada celular tem os seus. Funciona sem internet.
+- **Sincronização com a planilha (opcional):** dá para ligar depois uma sincronização com o
+  Google Sheets (via Apps Script) para compartilhar dados entre celulares — o backend está
+  pronto em [`apps-script/`](apps-script/).
 
 ## Principais recursos
 
-- **Mapa de fermentadores** — Série A (4 × 1.500 L) e Série B (6 × 1.000 L), com status por cor,
-  contador regressivo e barra de progresso do processo.
-- **Lotes** — ficha do produto, tempo de processo e parâmetros; seleção de organismo, inóculo e
-  meio a partir dos cadastros (o operador escolhe, não digita).
-- **Parâmetros (monitoramento)** — leituras de pH, temperatura, O₂ e agitação ao longo do
-  processo, comparadas com a faixa-alvo do organismo.
-- **Visitas** — acesso do funcionário à biofábrica, com **coletas e vistorias** individuais.
-- **Cadastros** — organismos, inóculos e meios (com receita e tempo de produção) e funcionários.
-- **Relatório / Laudo** — todos os campos do **Relatório de Análise Microbiológica On Farm (2026)**;
-  envio do laudo por **WhatsApp** (texto) ou **PDF com as fotos** (placas, microscopia), fiel ao
-  documento oficial.
-- **Painel & Análise** — cruza processo × resultado (UFC/mL), com faixas-alvo, médias por meio/
-  organismo e observações automáticas para ajudar a calibrar pH/temperatura.
-- **Multiusuário** — vários celulares veem e editam os mesmos dados; atualização automática.
+- **Mapa de fermentadores** — Série A (4 × 1.500 L) e Série B (6 × 1.000 L), status por cor,
+  contador regressivo e barra de progresso.
+- **Cadastros** — produtos (ligam organismo + inóculo + meio), organismos, inóculos e meios
+  (com dose por 1000 L) e funcionários. O operador **escolhe, não digita**.
+- **Ficha do lote** — o produto preenche organismo/inóculo/meio; o volume calcula as doses;
+  salvar inicia o contador; fluxo de status (Disponível → Em Processo → Aguardando → Em Análise →
+  Concluído) com barra de etapas e finalização automática.
+- *(Em reconstrução por camadas)* Parâmetros (pH/temperatura), Ajustes, Relatório, Laudo em PDF,
+  Fotos, Visitas e Painel & Análise.
 
 ## Estrutura do repositório
 
 ```
 .
-├─ index.html                       # página que redireciona para o app (GitHub Pages)
-├─ README.md                        # este arquivo (visão geral)
-├─ .clasp.json                      # liga o repositório ao projeto Apps Script (clasp)
-├─ .github/workflows/               # publicação automática no Apps Script a cada push
-└─ apps-script/                     # O APP (fonte publicada no Google Apps Script)
-   ├─ Codigo.gs                     # backend: lê/grava na planilha; gera PDF do laudo
-   ├─ Index.html                    # tela do app (o que aparece no celular)
-   ├─ appsscript.json               # manifesto do web app
-   └─ README.md                     # guia de instalação + publicação pelo Git (clasp)
+├─ index.html                 # abre o app (redirect para /app/) — GitHub Pages
+├─ app/                       # O APP (roda no navegador / PWA)
+│   ├─ index.html             # a tela do app
+│   ├─ manifest.webmanifest   # instala na tela inicial
+│   ├─ sw.js                  # service worker (offline)
+│   └─ icon.svg               # ícone do app
+├─ apps-script/               # backend opcional (sincronização com Google Sheets)
+│   ├─ Codigo.gs · Index.html · appsscript.json · README.md
+├─ README.md · .clasp.json · .github/ · .gitignore
 ```
 
-> Os arquivos do app ficam **apenas** em `apps-script/` (é o que o `clasp` publica). O `index.html`
-> na raiz é só a página de atalho do GitHub Pages.
+## Publicar (GitHub Pages)
 
-## Tecnologia
-
-Google Apps Script + Google Sheets (grátis, sem servidor para manter). Os registros ficam numa
-planilha do Google que a fazenda controla — criada automaticamente na primeira configuração
-(`setup`). Desenvolvimento e publicação são feitos **pelo GitHub** (com o `clasp`).
+No GitHub: **Settings → Pages → Build and deployment → Deploy from a branch → `main` / `/root` →
+Save**. Em ~1 minuto o app fica em `https://favbalanca-ai.github.io/biofabrica/`
+(a página inicial encaminha para `/app/`). No celular: **Compartilhar → Adicionar à tela inicial**
+para virar um ícone de app.
