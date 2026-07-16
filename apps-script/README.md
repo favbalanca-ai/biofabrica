@@ -89,8 +89,12 @@ a cada push no `main` que mexa em `apps-script/`, ele roda `clasp push` sozinho.
    - Windows: `%USERPROFILE%\.clasprc.json` · Mac/Linux: `~/.clasprc.json`
 2. No GitHub: repositório → **Settings → Secrets and variables → Actions → New repository secret**.
    - Nome: `CLASPRC_JSON` · Valor: cole o conteúdo do `.clasprc.json`.
-3. (Opcional) Para publicar a **nova versão** no mesmo link `/exec` automaticamente, descubra o ID
-   da implantação com `clasp deployments` e crie outro secret `CLASP_DEPLOYMENT_ID` com esse ID.
+
+Pronto: a cada push no `main`, o fluxo roda `clasp push` **e publica a nova versão no mesmo
+link `/exec`** — ele **descobre sozinho** a implantação existente (não precisa informar o ID).
+
+> (Opcional) Se você tiver mais de uma implantação e quiser fixar exatamente qual atualizar,
+> rode `clasp deployments`, copie o ID desejado e crie o secret `CLASP_DEPLOYMENT_ID` com ele.
 
 > **Nunca** faça commit do `.clasprc.json` — são as suas credenciais. Só o `.clasp.json`
 > (que tem apenas os IDs do projeto/planilha) fica no Git.
