@@ -821,7 +821,7 @@ function fluxoStepper(l){
 }
 function viewLote(){
   var l=loteAtual(); if(!l) return '<div class="vazio">Lote não encontrado.</div>';
-  var SECS=[["ficha","📄 Ficha"],["monitor","📈 Parâmetros"],["ajustes","⚗️ Ajustes"],["relatorio","🔬 Relatório"],["fotos","📷 Fotos"],["laudo","📤 Laudo"]];
+  var SECS=[["ficha","📄 Ficha"],["acompanhar","📋 Acompanhamento"],["fotos","📷 Fotos"],["analise","🔬 Análise / Laudo"]];
   var segs=SECS.map(function(s){return '<button class="seg'+(S.secao===s[0]?" on":"")+'" data-sec="'+s[0]+'">'+s[1]+'</button>';}).join("");
   var h='<button class="voltar" data-hist="'+S.aFer+'">← '+esc(S.aFer)+' — Histórico</button>'
     +'<div class="row"><h1 style="font-family:monospace;font-size:16px">'+esc(l.loteNum||l.id)+'</h1>'+badge(l.status)+'</div>'
@@ -830,12 +830,10 @@ function viewLote(){
     +(countdownHtml(l)?'<div style="margin:6px 0">'+progressoHtml(l)+countdownHtml(l)+'</div>':'')
     +'<div style="height:8px"></div><div class="segs">'+segs+'</div>';
   if(S.secao==="ficha") h+=secFicha(l);
-  else if(S.secao==="monitor") h+=secMonitor(l);
-  else if(S.secao==="ajustes") h+=secAjustes(l);
-  else if(S.secao==="relatorio") h+=secRelatorio(l);
+  else if(S.secao==="acompanhar") h+=secAcompanhamento(l);
   else if(S.secao==="fotos") h+=secFotos(l);
-  else if(S.secao==="laudo") h+=secLaudo(l);
-  else h+='<div class="vazio">🚧 <b>'+esc((SECS.find(function(s){return s[0]===S.secao;})||[])[1]||"")+'</b><br>Esta parte entra na próxima camada da reconstrução.</div>';
+  else if(S.secao==="analise") h+=secAnalise(l);
+  else h+=secFicha(l);
   // Navegação entre abas (deslize com o dedo ou use os botões).
   var idx=SECS.findIndex(function(s){return s[0]===S.secao;});
   h+='<div class="secnav">'
@@ -846,7 +844,7 @@ function viewLote(){
   return h;
 }
 // Muda para a aba anterior/seguinte do lote.
-var LOTE_SECS=["ficha","monitor","ajustes","relatorio","fotos","laudo"];
+var LOTE_SECS=["ficha","acompanhar","fotos","analise"];
 function passarAba(dir){
   var i=LOTE_SECS.indexOf(S.secao); if(i<0) return;
   var ni=i+(dir==="next"?1:-1);
@@ -1054,7 +1052,6 @@ function secFicha(l){
   var recInoc=receitaDe("inoculos",l.inoculo), recMeio=receitaDe("meios",l.meio);
   var ferVol=Number(ferConfig(l.fermentador).volume)||0;
   var volFab=l.volumeFab||(ferVol||"");
-  var finAberta = ["Aguardando Análise","Em Análise","Concluído"].indexOf(l.status)>=0 || l.dtFim || l.temperatura || l.ph || tempoAcabou(l);
   return '<div class="card"><div class="sec-title">Identificação do produto</div>'
     +field("Nº do Lote (interno)","f_loteNum",l.loteNum)
     +selNomes("Nome do produto","f_produto",nomesProd(),l.produto,' data-prod="1"')
@@ -1074,21 +1071,32 @@ function secFicha(l){
     +'<div class="card"><div class="sec-title">Processo</div>'
     +field("Data/Hora de início (= multiplicação)","f_dtInicio",l.dtInicio,"datetime-local")
     +fieldNum("Tempo de produção (horas)","f_tempoH",l.tempoProducaoH,"vem da receita")
-    +(countdownHtml(l)?'<div style="margin:4px 0">'+countdownHtml(l)+'</div>':'')
-    +'<p class="muted" style="margin:2px 0 0">Ao <b>Salvar Ficha</b>, o contador de tempo começa automaticamente.</p>'
-    +'</div>'
-    +'<button class="btn" id="btnSalvarFicha">💾 Salvar Ficha (inicia o contador)</button>'
-    +'<div class="card" style="margin-top:12px"><div class="sec-title">Finalização do processo</div>'
-    +'<details class="maisopc"'+(finAberta?' open':'')+'><summary>🏁 Preencher ao encerrar a produção (toque para abrir)</summary>'
-    +field("Data/Hora de fim","f_dtFim",l.dtFim,"datetime-local")
-    +'<div class="grid2">'+field("Temperatura","f_temperatura",l.temperatura,"text","Ex: 30 ou N/A")+field("pH","f_ph",l.ph,"text","Ex: 6.5 ou N/A")+'</div>'
-    +'<div class="grid2">'+fieldNum("Volume inicial (L)","f_volIni",l.volumeInicial)+fieldNum("Volume final (L)","f_volFim",l.volumeFinal)+'</div>'
     +selNomes("Operador responsável","f_operador",nomesFunc(),l.operador)
-    +fieldArea("Observações gerais","f_obs",l.obs,"Intercorrências, condições do ambiente…")
-    +'</details>'
-    +'<button class="btn green" id="btnFinalizar" style="margin-top:8px">🏁 Finalizar produção → Laudo</button>'
+    +(countdownHtml(l)?'<div style="margin:4px 0">'+countdownHtml(l)+'</div>':'')
+    +'<p class="muted" style="margin:2px 0 0">Ao <b>Salvar Ficha</b>, o processo começa e o app abre a aba <b>Acompanhamento</b>.</p>'
     +'</div>'
+    +'<button class="btn" id="btnSalvarFicha">💾 Salvar Ficha (inicia o processo)</button>'
     +'<button class="btn danger" id="btnExcluir" style="margin-top:8px">🗑 Excluir Lote</button>';
+}
+// Aba Acompanhamento (durante o processo): leituras, ajustes e observações.
+function secAcompanhamento(l){
+  var h='<p class="muted" style="margin:0 0 12px">Durante o processo: registre as <b>leituras de pH/temperatura</b>, os <b>ajustes</b> e as <b>observações</b>.</p>'
+    +secMonitor(l)
+    +secAjustes(l)
+    +'<div class="card"><div class="sec-title">Observações do processo</div>'
+    +fieldArea("Observações","ac_obsproc",l.obs,"Intercorrências, condições do ambiente…")
+    +'<button class="btn sec" id="btnSalvarObs">💾 Salvar observações</button></div>';
+  if(l.status!=="Concluído")
+    h+='<button class="btn green" id="btnFinalizar">🏁 Finalizar produção → Análise</button>';
+  return h;
+}
+// Aba Análise / Laudo (após o processo): dados da análise, resultado e conclusão.
+function secAnalise(l){
+  var banner='';
+  if(l.status==="Aguardando Análise") banner='<div class="alerta">⏳ <b>Aguardando análise.</b> Preencha os dados e, quando sair do laboratório, o <b>resultado (UFC/mL)</b>. Depois toque em <b>Concluir</b>.</div>';
+  else if(l.status==="Em Análise") banner='<div class="alerta" style="background:#f1ecf8;border-color:#c9b8e0;border-left-color:#7a5aa8;color:#4a2a70">🔬 <b>Em análise.</b> Ao <b>Concluir</b>, o resultado vai para o histórico e o fermentador é liberado.</div>';
+  else if(["Concluído"].indexOf(l.status)<0) banner='<div class="alerta">Finalize a produção na aba <b>Acompanhamento</b> para liberar a análise.</div>';
+  return banner+secRelatorio(l)+secLaudo(l);
 }
 
 // ─── AÇÕES: LOTE / FLUXO ───────────────────────────────────────────
@@ -1118,12 +1126,11 @@ function proximoNumeroRelatorio(){
   return String(max+1).padStart(3,"0");
 }
 function coletarFicha(l){
-  // O status NÃO é lido de um seletor — é controlado automaticamente pelo fluxo.
+  // Só os campos da Ficha. Status e dados de análise são de outras fases.
   Object.assign(l,{ loteNum:val("f_loteNum"), produto:val("f_produto"),
     microrganismo:val("f_microrganismo"), inoculo:val("f_inoculo"), meio:val("f_meio"),
-    tempoProducaoH:val("f_tempoH"), loteMeio:val("f_loteMeio"), loteInoculo:val("f_loteInoculo"), volumeFab:val("f_volFab"),
-    dtInicio:val("f_dtInicio"), dtFim:val("f_dtFim"), temperatura:val("f_temperatura"), ph:val("f_ph"),
-    volumeInicial:val("f_volIni"), volumeFinal:val("f_volFim"), operador:val("f_operador"), obs:val("f_obs") });
+    tempoProducaoH:val("f_tempoH"), loteMeio:val("f_loteMeio"), loteInoculo:val("f_loteInoculo"),
+    volumeFab:val("f_volFab"), dtInicio:val("f_dtInicio"), operador:val("f_operador") });
   l.loteProduto=l.loteNum;
   if(!l.dataMultiplicacao && l.dtInicio) l.dataMultiplicacao=String(l.dtInicio).split("T")[0];
 }
@@ -1131,16 +1138,27 @@ function salvarFicha(){
   var l=loteAtual(); if(!l) return;
   coletarFicha(l);
   if(l.status==="Disponível" || !l.status) l.status="Em Processo";
+  var indoAcompanhar = (l.status==="Em Processo");
   if(!l.dtInicio){
     var th=l.tempoProducaoH||tempoDe("meios",l.meio)||tempoDe("inoculos",l.inoculo);
     if(th){ var agora=nowDT(); l.tempoProducaoH=th; l.dtInicio=agora; l.dataMultiplicacao=agora.split("T")[0];
-      persistLote(l,"Ficha salva. Em Processo — contador iniciado: "+fmt(agora)+"."); return; }
+      S.secao="acompanhar"; persistLote(l,"Processo iniciado ("+fmt(agora)+"). Acompanhe as leituras."); return; }
     toast("Ficha salva. (Cadastre o tempo de produção na receita para iniciar o contador.)");
   }
+  if(indoAcompanhar) S.secao="acompanhar";
   persistLote(l,"Ficha salva.");
+}
+function salvarObs(){
+  var l=loteAtual(); if(!l) return;
+  l.obs=val("ac_obsproc");
+  persistLote(l,"Observações salvas.");
 }
 function autoPreencherFinalizacao(l){
   var vazio=function(v){ return v===undefined||v===null||!String(v).trim(); };
+  // Temperatura e pH = média das leituras registradas (se ainda estiverem em branco).
+  var c=consolidarLote(l);
+  if(vazio(l.temperatura) && c.tMed!==null) l.temperatura=c.tMed.toFixed(1).replace('.',',');
+  if(vazio(l.ph) && c.phMed!==null) l.ph=c.phMed.toFixed(1).replace('.',',');
   if(vazio(l.volumeFinal) && !vazio(l.volumeFab)) l.volumeFinal=l.volumeFab;
   var hoje=nowDate(), dtFimDate=l.dtFim?String(l.dtFim).split("T")[0]:hoje;
   if(vazio(l.dataColeta)) l.dataColeta=dtFimDate;
@@ -1159,8 +1177,8 @@ function finalizarProducao(){
   if(!l.dtFim) l.dtFim=nowDT();
   autoPreencherFinalizacao(l);
   if(["Em Processo","Disponível",""].indexOf(l.status)>=0 || !l.status) l.status="Aguardando Análise";
-  S.secao="relatorio";
-  persistLote(l,"Produção finalizada. (Relatório/Laudo na próxima camada.)");
+  S.secao="analise";
+  persistLote(l,"Produção finalizada. Preencha os dados da análise.");
 }
 function excluirLote(){
   var l=loteAtual(); if(!l) return;
@@ -1436,7 +1454,7 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnCSV");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnCSV");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -1458,6 +1476,7 @@ function bind(){
     if(t.dataset.delajuste){ delAjuste(t.dataset.delajuste); return; }
     if(t.id==="btnAddMed"){ addMedicao(); return; }
     if(t.id==="btnAddAjuste"){ addAjuste(); return; }
+    if(t.id==="btnSalvarObs"){ salvarObs(); return; }
     if(t.id==="btnSalvarRelatorio"){ salvarRelatorio(); return; }
     if(t.id==="btnCopiar"){ copiarLaudo(); return; }
     if(t.id==="btnCompartilhar"){ compartilharLaudo(); return; }
