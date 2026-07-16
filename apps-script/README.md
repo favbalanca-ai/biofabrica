@@ -61,6 +61,42 @@ App web para **vários celulares**, com os dados guardados numa **planilha do Go
 
 ---
 
+## Publicar direto do Git (clasp) — sem colar código à mão
+
+O projeto já está ligado ao Apps Script pelo arquivo [`.clasp.json`](../.clasp.json)
+(planilha e projeto configurados). Com o **clasp** você envia o código do Git para o
+Apps Script com **um comando**, em vez de copiar e colar.
+
+### Uma vez, no seu computador
+1. Instale o Node.js e o clasp: `npm install -g @google/clasp`
+2. Faça login com a **sua conta Google** (a mesma dona do projeto): `clasp login`
+   - Isso cria o arquivo `~/.clasprc.json` (as suas credenciais — **não** vão para o Git).
+
+### Sempre que quiser publicar
+Na pasta do repositório:
+```bash
+clasp push            # envia Codigo.gs, Index.html e appsscript.json para o Apps Script
+```
+Depois, no editor do Apps Script, publique a versão: **Implantar → Gerenciar implantações →
+✏️ → Nova versão** (mantém o mesmo link `/exec`). Para publicar a versão também pela linha de
+comando: `clasp deploy -i <ID_DA_IMPLANTAÇÃO>`.
+
+### Publicação automática ao dar push no GitHub (opcional)
+Já existe o fluxo [`.github/workflows/deploy-appsscript.yml`](../.github/workflows/deploy-appsscript.yml):
+a cada push no `main` que mexa em `apps-script/`, ele roda `clasp push` sozinho. Para ligar:
+
+1. No seu computador, após `clasp login`, copie **todo o conteúdo** do arquivo `~/.clasprc.json`.
+   - Windows: `%USERPROFILE%\.clasprc.json` · Mac/Linux: `~/.clasprc.json`
+2. No GitHub: repositório → **Settings → Secrets and variables → Actions → New repository secret**.
+   - Nome: `CLASPRC_JSON` · Valor: cole o conteúdo do `.clasprc.json`.
+3. (Opcional) Para publicar a **nova versão** no mesmo link `/exec` automaticamente, descubra o ID
+   da implantação com `clasp deployments` e crie outro secret `CLASP_DEPLOYMENT_ID` com esse ID.
+
+> **Nunca** faça commit do `.clasprc.json` — são as suas credenciais. Só o `.clasp.json`
+> (que tem apenas os IDs do projeto/planilha) fica no Git.
+
+---
+
 ## Como usar
 
 - **Cadastros:** no mapa, toque em **📚 Cadastros** para cadastrar, na planilha:

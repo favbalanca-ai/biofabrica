@@ -7,9 +7,10 @@
  */
 
 // ─── CONFIGURAÇÃO ──────────────────────────────────────────────────
-// Deixe vazio para usar a planilha à qual este script está vinculado
-// (Extensões → Apps Script dentro da planilha). Ou cole o ID de uma planilha.
-const SHEET_ID = '';
+// ID da planilha Google usada como banco de dados. Deixe vazio para usar a
+// planilha à qual este script está vinculado (Extensões → Apps Script dentro
+// da planilha). Aqui apontamos para a planilha "BIOFÁBRICA — PRODUÇÃO".
+const SHEET_ID = '15w2RQiLl5QXtt_RSpX2c1F2fDQqpzJpv1hHi3vUfSjQ';
 
 const TAB = {
   FERM:    'Fermentadores',

@@ -1,0 +1,7 @@
+# Credenciais do clasp (login do Google) — NUNCA versionar
+.clasprc.json
+**/.clasprc.json
+
+# Node
+node_modules/
+npm-debug.log*

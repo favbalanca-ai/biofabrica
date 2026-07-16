@@ -1,0 +1,43 @@
+name: Publicar no Apps Script (clasp)
+
+# Sempre que o código do app mudar no main, envia para o projeto Apps Script.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps-script/**'
+      - '.clasp.json'
+      - '.github/workflows/deploy-appsscript.yml'
+  workflow_dispatch: {}
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar clasp
+        run: npm install -g @google/clasp@2.4.2
+
+      - name: Autenticar (credenciais do clasp)
+        run: printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+
+      - name: Enviar código para o Apps Script (clasp push)
+        run: clasp push -f
+
+      - name: Publicar nova versão no mesmo link /exec (opcional)
+        run: |
+          if [ -n "$DEPLOY_ID" ]; then
+            clasp deploy -i "$DEPLOY_ID" -d "auto $(date -u +%Y-%m-%d)"
+            echo "Nova versão publicada na implantação $DEPLOY_ID (mesmo link /exec)."
+          else
+            echo "Sem CLASP_DEPLOYMENT_ID configurado: o código foi atualizado, mas a versão publicada (/exec) não muda ate voce publicar uma nova versao. Configure o secret CLASP_DEPLOYMENT_ID para publicar automaticamente."
+          fi
+        env:
+          DEPLOY_ID: ${{ secrets.CLASP_DEPLOYMENT_ID }}
