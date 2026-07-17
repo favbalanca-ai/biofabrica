@@ -218,6 +218,17 @@ var LAUDO_CONSIDERACOES = [
   "A coloração de Gram foi realizada utilizando uma alíquota da amostra líquida.",
   "A amostra será retida para contraprova por 7 dias, contados a partir da emissão do relatório.",
 ];
+// Laudo de FUNGO (salas · multiplicação via sólido) — modelo "Resultado Microbiológico - Fungo".
+// Contagem de conídios em câmara de Neubauer (5 quadrantes × 2 campos).
+var LAUDO_FUNGO_TITULO = "RESULTADO MICROBIOLÓGICO — FUNGO";
+var LAUDO_FUNGO_CONSID = [
+  "Contagem de conídios realizada em câmara de Neubauer (5 quadrantes por campo, 2 campos).",
+  "Resultado (conídios/mL) = média dos campos × 25 × 10⁴ × fator de diluição.",
+  "A presente análise tem seu valor restrito à amostra entregue ao laboratório. A identificação da amostra é de exclusiva responsabilidade do emitente.",
+  "A amostra será retida para contraprova por 7 dias, contados a partir da emissão do relatório.",
+];
+var FUNGO_DIL = [1,2,3,4]; // potência da diluição (10⁻¹, 10⁻², …)
+var FATOR_NEUBAUER = 25 * 1e4; // 25 quadrados médios × 10⁴ (volume 10⁻⁴ mL do quadrado grande)
 var TIPO_AMOSTRA = ["Água","Inóculo","Meio de cultura","Multiplicado","Outro"];
 var MEIO_CULTURA = ["BAC","SM","BUG","CATP","FINISH","WHITE","Não se aplica"];
 var TIPO_COMPRESSOR = ["Odontológico/Parafuso","Radial","Venturi"];
@@ -1021,6 +1032,7 @@ function secLaudo(l){
         : '<button class="btn green" id="btnConcluir">✅ Concluir lote (libera o fermentador)</button>');
 }
 function montarLaudo(l){
+  if(ehSala(l.fermentador)) return montarLaudoFungo(l);
   var f=ferConfig(l.fermentador); var L=[];
   L.push("*"+LAUDO_TITULO+"*");
   if(LAUDO_ENDERECO) L.push(LAUDO_ENDERECO);
@@ -1071,6 +1083,142 @@ function montarLaudo(l){
   L.push("");
   L.push("_Fazenda Água Viva · BioFábrica_");
   return L.join("\n");
+}
+
+// ══ LAUDO DE FUNGO (salas · sólido) — contagem de conídios em Neubauer ══
+function dilTxt(pow){ return "10⁻"+toSup(Number(pow||2)); }
+function fungoCampoLer(prefix){ var a=[]; for(var i=0;i<5;i++){ a.push(val("fg_"+prefix+"_"+i)); } return a; }
+function fungoMedia(arr){
+  var v=(arr||[]).map(num).filter(function(x){return x!==null;});
+  if(!v.length) return null;
+  return v.reduce(function(a,b){return a+b;},0)/v.length;
+}
+// conídios/mL = média dos campos × 25 × 10⁴ × fator de diluição (10^pow).
+function fungoResultadoCalc(m1,m2,pow){
+  var ms=[m1,m2].filter(function(x){return x!==null;});
+  if(!ms.length) return null;
+  var mean=ms.reduce(function(a,b){return a+b;},0)/ms.length;
+  return mean * FATOR_NEUBAUER * Math.pow(10, Number(pow||2));
+}
+function fungoResultadoNum(l){ return fungoResultadoCalc(fungoMedia(l.fungoC1),fungoMedia(l.fungoC2),l.fungoDil); }
+function fungoMediaTxt(m){ return m==null?"—":m.toFixed(1).replace('.',','); }
+// Formulário da análise de fungo (aba Análise das salas).
+function secRelatorioFungo(l){
+  function campo(pref,arr){
+    var h='<div class="ufcrow" style="gap:6px">';
+    for(var i=0;i<5;i++){ h+='<input id="fg_'+pref+'_'+i+'" type="number" inputmode="numeric" style="width:56px;padding:10px 4px" value="'+esc((arr&&arr[i]!=null)?arr[i]:"")+'" placeholder="E'+(i+1)+'">'; }
+    h+='</div>';
+    return h;
+  }
+  var dilOpts=FUNGO_DIL.map(function(p){ return '<option value="'+p+'"'+(String(p)===String(l.fungoDil||2)?" selected":"")+'>'+dilTxt(p)+'</option>'; }).join("");
+  var m1=fungoMedia(l.fungoC1),m2=fungoMedia(l.fungoC2),res=fungoResultadoCalc(m1,m2,l.fungoDil||2);
+  return '<div class="card"><div class="sec-title">Identificação da amostra</div>'
+    +'<div class="grid2">'+field("Nº do relatório","fg_num",l.numeroRelatorio,"text","Ex: 004")+field("Data de emissão","fg_emissao",l.dataEmissao,"date")+'</div>'
+    +field("Contratante","fg_contratante",l.cliente||CLIENTE_PADRAO)
+    +selNomes("Microrganismo","fg_micro",nomesOrg(),l.microrganismo)
+    +field("Identificação (Ident.)","fg_ident",l.identAmostra,"text","Ex: Trichoderma 01")
+    +field("Período de execução","fg_periodo",l.periodoExec,"text","Ex: 16/07 a 23/07")
+    +'<p class="muted" style="margin:0">Substrato <b>'+esc(substratoTxt(l)||"—")+'</b> · Tipo da amostra: <b>Meio sólido</b> (vêm da Ficha).</p>'
+    +'</div>'
+    +'<div class="card"><div class="sec-title">Contagem de conídios (câmara de Neubauer)</div>'
+    +'<div class="field"><label>Diluição</label><select id="fg_dil" style="width:auto;min-width:110px;font-weight:700">'+dilOpts+'</select></div>'
+    +'<div class="field"><label>Campo 1 — quadrantes E1 a E5</label>'+campo("c1",l.fungoC1)+'</div>'
+    +'<div class="field"><label>Campo 2 — quadrantes E1 a E5</label>'+campo("c2",l.fungoC2)+'</div>'
+    +'<div class="dosebox" style="margin:6px 0 10px">Média Campo 1: <b id="fg_prev_m1">'+fungoMediaTxt(m1)+'</b> · '
+      +'Média Campo 2: <b id="fg_prev_m2">'+fungoMediaTxt(m2)+'</b></div>'
+    +'<div class="ufcprev" id="fg_prev_res">= '+(res==null?"—":fmtUFCnum(res)+" conídios/mL")+'</div>'
+    +field("Teste de germinação (%)","fg_germ",l.fungoGerm,"text","Ex: 97,7")
+    +'</div>'
+    +'<div class="card"><div class="sec-title">Coleta e responsável</div>'
+    +field("Data da coleta","fg_dtColeta",l.dataColeta,"date")
+    +selNomes("Responsável técnico","fg_resp",nomesFunc(),l.responsavelAnalise||l.operador)
+    +field("Função / título","fg_respFuncao",l.respFuncao||"Eng. Agrônomo(a)","text","Ex: Eng. Agrônoma")
+    +'</div>'
+    +'<button class="btn" id="btnSalvarRelatorio">💾 Salvar Relatório</button>';
+}
+function atualizarFungoPrev(){
+  if(!el("fg_prev_res")) return;
+  var m1=fungoMedia(fungoCampoLer("c1")),m2=fungoMedia(fungoCampoLer("c2"));
+  var res=fungoResultadoCalc(m1,m2,val("fg_dil")||2);
+  if(el("fg_prev_m1")) el("fg_prev_m1").textContent=fungoMediaTxt(m1);
+  if(el("fg_prev_m2")) el("fg_prev_m2").textContent=fungoMediaTxt(m2);
+  el("fg_prev_res").textContent="= "+(res==null?"—":fmtUFCnum(res)+" conídios/mL");
+}
+function coletarRelatorioFungo(l){
+  Object.assign(l,{
+    numeroRelatorio:val("fg_num"), dataEmissao:val("fg_emissao"), cliente:val("fg_contratante"),
+    microrganismo:val("fg_micro"), identAmostra:val("fg_ident"), periodoExec:val("fg_periodo"),
+    fungoDil:val("fg_dil"), fungoGerm:val("fg_germ"), dataColeta:val("fg_dtColeta"),
+    responsavelAnalise:val("fg_resp"), respFuncao:val("fg_respFuncao"),
+    fungoC1:fungoCampoLer("c1"), fungoC2:fungoCampoLer("c2")
+  });
+  var res=fungoResultadoNum(l);
+  l.resultadoQuantitativo = res==null?"" : (fmtUFCnum(res)+" conídios/mL");
+}
+function montarLaudoFungo(l){
+  var m1=fungoMedia(l.fungoC1),m2=fungoMedia(l.fungoC2),res=fungoResultadoNum(l);
+  function linha(arr,m){ var c=arr||[],o=[]; for(var i=0;i<5;i++) o.push((c[i]==null||c[i]==="")?"—":c[i]); o.push(fungoMediaTxt(m)); return o.join(" | "); }
+  var L=[];
+  L.push("*"+LAUDO_FUNGO_TITULO+"*");
+  L.push("");
+  L.push("Contratante: "+(l.cliente||CLIENTE_PADRAO));
+  L.push("Local da Produção: "+CLIENTE_PADRAO+" · "+nomeUnidade(l.fermentador));
+  L.push("Período de execução: "+(l.periodoExec||"—"));
+  L.push("Microrganismo: "+(l.microrganismo||"—"));
+  L.push("Substrato: "+(substratoTxt(l)||"—")+"    Ident.: "+(l.identAmostra||"—"));
+  L.push("Tipo da Amostra: Meio sólido    Diluição: "+dilTxt(l.fungoDil));
+  L.push("");
+  L.push("*Contagem de conídios/mL*");
+  L.push("QUADRANTE | E1 | E2 | E3 | E4 | E5 | MÉDIA");
+  L.push("CAMPO 1 | "+linha(l.fungoC1,m1));
+  L.push("CAMPO 2 | "+linha(l.fungoC2,m2));
+  L.push("");
+  L.push("*RESULTADO:* "+(res==null?"—":fmtUFCnum(res)+" conídios/mL"));
+  L.push("Teste de Germinação: "+(l.fungoGerm?l.fungoGerm+"% de germinação.":"—"));
+  L.push("");
+  L.push("Data da coleta: "+(l.dataColeta?fmtDate(l.dataColeta):"—"));
+  L.push("Nº do Relatório: "+(l.numeroRelatorio||"—")+"    Emissão: "+(l.dataEmissao?fmtDate(l.dataEmissao):"—"));
+  L.push("");
+  L.push("A presente análise tem seu valor restrito à amostra entregue ao laboratório. A identificação da amostra é de exclusiva responsabilidade do emitente.");
+  if(l.responsavelAnalise){ L.push(""); L.push(l.responsavelAnalise+(l.respFuncao?" — "+l.respFuncao:"")); }
+  L.push("");
+  L.push("_Fazenda Água Viva · BioFábrica_");
+  return L.join("\n");
+}
+function laudoFungoPrintHtml(l){
+  var m1=fungoMedia(l.fungoC1),m2=fungoMedia(l.fungoC2),res=fungoResultadoNum(l);
+  function kv(k,v){ return '<tr><td class="k">'+esc(k)+'</td><td>'+(v==null||v===""?"—":esc(v))+'</td></tr>'; }
+  function cc(txt,bold){ return '<td style="text-align:center'+(bold?';font-weight:bold':'')+';background:#f6f2e8">'+esc(txt)+'</td>'; }
+  function dc(v){ return '<td style="text-align:center">'+((v==null||v==="")?"—":esc(v))+'</td>'; }
+  function linha(nome,arr,m){ var c=arr||[],o='<td class="k" style="text-align:center">'+nome+'</td>'; for(var i=0;i<5;i++) o+=dc(c[i]); o+='<td style="text-align:center;font-weight:bold">'+fungoMediaTxt(m)+'</td>'; return '<tr>'+o+'</tr>'; }
+  var assinatura = l.responsavelAnalise
+    ? '<div style="margin-top:30px;text-align:center"><div style="border-top:1px solid #333;width:55%;margin:0 auto 4px"></div>'
+        +'<div style="font-size:12px;font-weight:bold">'+esc(l.responsavelAnalise)+'</div>'
+        +(l.respFuncao?'<div style="font-size:10px;color:#555">'+esc(l.respFuncao)+'</div>':'')+'</div>'
+    : '';
+  return '<h1>'+esc(LAUDO_FUNGO_TITULO)+'</h1><div class="sub">Fazenda Água Viva · BioFábrica</div>'
+    +'<table>'
+      +'<tr><td class="k">Nº do Relatório</td><td>'+esc(l.numeroRelatorio||"—")+'</td><td class="k">Emissão</td><td>'+(l.dataEmissao?fmtDate(l.dataEmissao):"—")+'</td></tr>'
+      +kv("Contratante",l.cliente||CLIENTE_PADRAO)
+      +kv("Local da Produção",CLIENTE_PADRAO+" · "+nomeUnidade(l.fermentador))
+      +kv("Período de execução",l.periodoExec)
+      +kv("Microrganismo",l.microrganismo)
+      +'<tr><td class="k">Substrato</td><td>'+esc(substratoTxt(l)||"—")+'</td><td class="k">Ident.</td><td>'+esc(l.identAmostra||"—")+'</td></tr>'
+      +'<tr><td class="k">Tipo da Amostra</td><td>Meio sólido</td><td class="k">Diluição</td><td>'+esc(dilTxt(l.fungoDil))+'</td></tr>'
+    +'</table>'
+    +'<table><tr class="sec"><td colspan="7">Contagem de conídios/mL</td></tr>'
+      +'<tr>'+cc("QUADRANTE")+cc("E1")+cc("E2")+cc("E3")+cc("E4")+cc("E5")+cc("MÉDIA")+'</tr>'
+      +linha("CAMPO 1",l.fungoC1,m1)
+      +linha("CAMPO 2",l.fungoC2,m2)
+    +'</table>'
+    +'<table>'
+      +'<tr><td class="k">RESULTADO</td><td style="font-size:14px;font-weight:bold">'+(res==null?"—":esc(fmtUFCnum(res)+" conídios/mL"))+'</td></tr>'
+      +kv("Teste de Germinação",l.fungoGerm?l.fungoGerm+"% de germinação.":"—")
+      +kv("Data da coleta",l.dataColeta?fmtDate(l.dataColeta):"—")
+    +'</table>'
+    +'<table><tr class="sec"><td colspan="2">Considerações</td></tr><tr><td colspan="2">'+LAUDO_FUNGO_CONSID.map(function(c){return "• "+esc(c);}).join("<br>")+'</td></tr></table>'
+    +assinatura
+    +fotosLaudoHtml(l);
 }
 
 // ── Fotos (guardadas no aparelho como imagem; entram no laudo impresso) ──
@@ -1149,11 +1297,14 @@ function secAcompanhamento(l){
 }
 // Aba Análise / Laudo (após o processo): dados da análise, resultado e conclusão.
 function secAnalise(l){
+  var sala=ehSala(l.fermentador);
+  var unid=rotuloUnidade(l.fermentador);
+  var resLabel=sala?"resultado (conídios/mL)":"resultado (UFC/mL)";
   var banner='';
-  if(l.status==="Aguardando Análise") banner='<div class="alerta">⏳ <b>Aguardando análise.</b> Preencha os dados e, quando sair do laboratório, o <b>resultado (UFC/mL)</b>. Depois toque em <b>Concluir</b>.</div>';
-  else if(l.status==="Em Análise") banner='<div class="alerta" style="background:#f1ecf8;border-color:#c9b8e0;border-left-color:#7a5aa8;color:#4a2a70">🔬 <b>Em análise.</b> Ao <b>Concluir</b>, o resultado vai para o histórico e o fermentador é liberado.</div>';
+  if(l.status==="Aguardando Análise") banner='<div class="alerta">⏳ <b>Aguardando análise.</b> Preencha os dados e, quando sair do laboratório, o <b>'+resLabel+'</b>. Depois toque em <b>Concluir</b>.</div>';
+  else if(l.status==="Em Análise") banner='<div class="alerta" style="background:#f1ecf8;border-color:#c9b8e0;border-left-color:#7a5aa8;color:#4a2a70">🔬 <b>Em análise.</b> Ao <b>Concluir</b>, o resultado vai para o histórico e o '+esc(unid.toLowerCase())+' é liberado.</div>';
   else if(["Concluído"].indexOf(l.status)<0) banner='<div class="alerta">Finalize a produção na aba <b>Acompanhamento</b> para liberar a análise.</div>';
-  return banner+secRelatorio(l)+secLaudo(l);
+  return banner+(sala?secRelatorioFungo(l):secRelatorio(l))+secLaudo(l);
 }
 
 // ─── AÇÕES: LOTE / FLUXO ───────────────────────────────────────────
@@ -1169,6 +1320,7 @@ function novoLote(ferId){
     dataRecebimento:"",dataAnalise:"",tecnicaPlaqueamento:"Spread plate",diluicoesPlaqueadas:"10-3 , 10-4 e 10-5",
     tempIncubacao:"30±02 °C",tempoIncubacao:"24 a 48 h",choqueTermico:"Sim",coloracaoGram:"Sim",responsavelAnalise:"",
     resultadosQualitativos:"",outrosMicrorganismos:"",resultadoQuantitativo:"",
+    identAmostra:"",periodoExec:"",fungoDil:"2",fungoC1:[],fungoC2:[],fungoGerm:"",respFuncao:"",
     inoculo:"",meio:"",tempoProducaoH:"",volumeFab:"",loteInoculo:"",numeroSacos:"",tipoSubstrato:"",tipoSubstratoOutro:"",
     criadoPor:"",criadoEm:"",atualizadoEm:"" };
   overlay(true);
@@ -1342,7 +1494,7 @@ function coletarRelatorio(l){
 }
 function salvarRelatorio(){
   var l=loteAtual(); if(!l) return;
-  coletarRelatorio(l);
+  if(ehSala(l.fermentador)) coletarRelatorioFungo(l); else coletarRelatorio(l);
   // Registrar a análise move o lote de "Aguardando Análise" para "Em Análise".
   if(l.status==="Aguardando Análise"){ l.status="Em Análise"; if(!l.dataEmissao) l.dataEmissao=nowDate(); }
   persistLote(l,"Relatório salvo.");
@@ -1373,6 +1525,7 @@ function compartilharLaudo(){
 }
 // Monta o laudo formatado (tabela) e chama a impressão do navegador (Salvar como PDF).
 function laudoPrintHtml(l){
+  if(ehSala(l.fermentador)) return laudoFungoPrintHtml(l);
   var f=ferConfig(l.fermentador);
   var conc=l.resultadoQuantitativo||""; if(conc && !/ufc/i.test(conc)) conc=conc+" UFC/mL";
   function kv(k,v){ return '<tr><td class="k">'+esc(k)+'</td><td>'+(v==null||v===""?"—":esc(v))+'</td></tr>'; }
@@ -1564,6 +1717,7 @@ function bind(){
     }
     if(ev.target.id==="f_volFab"){ atualizarDoses(); return; }
     if(ev.target.id==="r_exp"||ev.target.id==="r_bc"){ atualizarUFCprev(); return; }
+    if(ev.target.id==="fg_dil"){ atualizarFungoPrev(); return; }
     if(ev.target.id==="ac_fer"){ var lt=el("ac_lote"); if(lt) lt.innerHTML=optionsLotesFer(ev.target.value); return; }
     if(ev.target.id==="fotoInput"){ var file=ev.target.files&&ev.target.files[0]; if(file) uploadFoto(file); ev.target.value=""; return; }
     if(ev.target.id==="importInput"){ var fb=ev.target.files&&ev.target.files[0]; if(fb) importarBackup(fb); ev.target.value=""; return; }
@@ -1571,6 +1725,7 @@ function bind(){
   app.oninput=function(ev){
     if(ev.target.id==="r_mant"){ atualizarUFCprev(); }
     if(ev.target.id==="f_volFab"){ atualizarDoses(); }
+    if(/^fg_c[12]_\d$/.test(ev.target.id||"")){ atualizarFungoPrev(); }
   };
 }
 
