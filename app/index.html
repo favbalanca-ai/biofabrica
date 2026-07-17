@@ -1134,6 +1134,9 @@ function secRelatorioFungo(l){
     +selNomes("Responsável técnico","fg_resp",nomesFunc(),l.responsavelAnalise||l.operador)
     +field("Função / título","fg_respFuncao",l.respFuncao||"Eng. Agrônomo(a)","text","Ex: Eng. Agrônoma")
     +'</div>'
+    +'<div class="card"><div class="sec-title">Observações</div>'
+    +fieldArea("Observações do laudo","fg_obs",l.outrasInformacoes,"Ex: pureza, aspecto das colônias, intercorrências…")
+    +'</div>'
     +'<button class="btn" id="btnSalvarRelatorio">💾 Salvar Relatório</button>';
 }
 function atualizarFungoPrev(){
@@ -1150,6 +1153,7 @@ function coletarRelatorioFungo(l){
     microrganismo:val("fg_micro"), identAmostra:val("fg_ident"), periodoExec:val("fg_periodo"),
     fungoDil:val("fg_dil"), fungoGerm:val("fg_germ"), dataColeta:val("fg_dtColeta"),
     responsavelAnalise:val("fg_resp"), respFuncao:val("fg_respFuncao"),
+    outrasInformacoes:val("fg_obs"),
     fungoC1:fungoCampoLer("c1"), fungoC2:fungoCampoLer("c2")
   });
   var res=fungoResultadoNum(l);
@@ -1175,6 +1179,7 @@ function montarLaudoFungo(l){
   L.push("");
   L.push("*RESULTADO:* "+(res==null?"—":fmtUFCnum(res)+" conídios/mL"));
   L.push("Teste de Germinação: "+(l.fungoGerm?l.fungoGerm+"% de germinação.":"—"));
+  if(l.outrasInformacoes){ L.push(""); L.push("*Observações:* "+l.outrasInformacoes); }
   L.push("");
   L.push("Data da coleta: "+(l.dataColeta?fmtDate(l.dataColeta):"—"));
   L.push("Nº do Relatório: "+(l.numeroRelatorio||"—")+"    Emissão: "+(l.dataEmissao?fmtDate(l.dataEmissao):"—"));
@@ -1216,6 +1221,7 @@ function laudoFungoPrintHtml(l){
       +kv("Teste de Germinação",l.fungoGerm?l.fungoGerm+"% de germinação.":"—")
       +kv("Data da coleta",l.dataColeta?fmtDate(l.dataColeta):"—")
     +'</table>'
+    +(l.outrasInformacoes?'<table><tr class="sec"><td colspan="2">Observações</td></tr><tr><td colspan="2">'+esc(l.outrasInformacoes)+'</td></tr></table>':'')
     +'<table><tr class="sec"><td colspan="2">Considerações</td></tr><tr><td colspan="2">'+LAUDO_FUNGO_CONSID.map(function(c){return "• "+esc(c);}).join("<br>")+'</td></tr></table>'
     +assinatura
     +fotosLaudoHtml(l);
