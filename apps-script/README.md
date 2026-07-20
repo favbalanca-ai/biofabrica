@@ -16,11 +16,19 @@ App web para **vários celulares**, com os dados guardados numa **planilha do Go
 
 ## Como instalar (passo a passo, ~10 min)
 
-### 1. A planilha (criada automaticamente)
-Não precisa criar planilha à mão. Com `SHEET_ID` vazio no `Codigo.gs` (padrão), ao rodar o
-**`setup`** (passo 4) o app **cria sozinho uma planilha nova em branco** chamada
-*"BioFábrica — Produção"* no seu Drive e passa a usá-la como banco de dados. O `setup`
-mostra o **link da planilha** ao terminar (função `urlPlanilha` também retorna esse link).
+### 1. A planilha e a pasta (criadas automaticamente)
+Não precisa criar planilha nem pasta à mão. Com `SHEET_ID` vazio no `Codigo.gs` (padrão), ao rodar o
+**`setup`** (passo 4) o app:
+- cria uma **pasta no seu Drive** chamada *"BioFábrica · Fazenda Água Viva"* (constante `PASTA_NOME`);
+- cria dentro dela uma **planilha nova** *"BioFábrica — Controle de Produção"* (`NOVA_PLANILHA_NOME`),
+  que passa a ser o banco de dados;
+- cria também, dentro da mesma pasta, a subpasta *"Fotos e Laudos"* (fotos dos lotes e PDFs).
+
+O `setup` mostra ao terminar o **link da pasta** e o **link da planilha** (a função `urlPlanilha`
+retorna o link da planilha; `pastaBase_().getUrl()` retorna o da pasta).
+
+> Se o Drive não estiver autorizado ainda, a planilha nasce na raiz e é movida para a pasta
+> assim que você conceder o acesso ao Drive (passo 4).
 
 > Prefere usar uma planilha específica? Cole o ID dela em `const SHEET_ID = '...'` no topo do `Codigo.gs`.
 
@@ -42,7 +50,8 @@ Como o projeto é **independente** (standalone), abra-o direto:
    escolha sua conta, e em "app não verificado" clique em *Avançado → Acessar (inseguro)*
    (é o seu próprio script). Autorize. **Importante:** o app também pede acesso ao **Google Drive**
    (para guardar as fotos e gerar os PDFs). Autorize normalmente. Ao rodar o `setup` é criada
-   automaticamente a pasta **"BioFábrica — Fotos e Laudos"** no seu Drive.
+   automaticamente a pasta **"BioFábrica · Fazenda Água Viva"** no seu Drive, com a planilha
+   e a subpasta **"Fotos e Laudos"** dentro dela.
 3. Volte à planilha: as abas **Fermentadores, Lotes, Visitas, Ajustes** devem ter sido criadas,
    com os 10 fermentadores (A1–A4 e B1–B6) já cadastrados.
 

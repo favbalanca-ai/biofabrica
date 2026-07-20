@@ -13,7 +13,9 @@
 //  • Ou cole aqui o ID de uma planilha existente para usar ela.
 const SHEET_ID = '';
 // Nome da planilha nova criada automaticamente (quando SHEET_ID está vazio).
-const NOVA_PLANILHA_NOME = 'BioFábrica — Produção';
+const NOVA_PLANILHA_NOME = 'BioFábrica — Controle de Produção';
+// Pasta no Drive que agrupa a planilha, as fotos e os PDFs de laudo.
+const PASTA_NOME = 'BioFábrica · Fazenda Água Viva';
 
 const TAB = {
   FERM:    'Fermentadores',
@@ -126,9 +128,40 @@ function ss_() {
   if (salvo) {
     try { return SpreadsheetApp.openById(salvo); } catch (e) { /* recriada abaixo */ }
   }
+  // Cria a planilha nova e a coloca dentro da pasta base (BioFábrica · Fazenda Água Viva).
   var nova = SpreadsheetApp.create(NOVA_PLANILHA_NOME);
   props.setProperty('SHEET_ID', nova.getId());
+  try { moverParaPastaBase_(nova.getId()); } catch (e) { /* sem permissão de Drive: segue na raiz */ }
   return nova;
+}
+
+// ─── PASTA BASE (Drive) ────────────────────────────────────────────
+/** Pasta única no Drive que agrupa a planilha, as fotos e os PDFs. Cria se não existir. */
+function pastaBase_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('BASE_FOLDER_ID');
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch (e) { /* recriada abaixo */ }
+  }
+  // Reaproveita uma pasta de mesmo nome, se já existir; senão cria.
+  var it = DriveApp.getFoldersByName(PASTA_NOME);
+  var folder = it.hasNext() ? it.next() : DriveApp.createFolder(PASTA_NOME);
+  props.setProperty('BASE_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+/** Move um arquivo do Drive (por id) para dentro da pasta base. */
+function moverParaPastaBase_(fileId) {
+  var file = DriveApp.getFileById(fileId);
+  var base = pastaBase_();
+  base.addFile(file);
+  // Remove da raiz (My Drive) para não ficar duplicado na listagem.
+  var parents = file.getParents();
+  while (parents.hasNext()) {
+    var p = parents.next();
+    if (p.getId() !== base.getId()) { try { p.removeFile(file); } catch (e) {} }
+  }
+  return file;
 }
 
 /** URL da planilha em uso (útil para achar a planilha nova criada pelo setup). */
@@ -168,8 +201,13 @@ function setup() {
   // Garante a pasta no Drive (e dispara a autorização do Drive para gerar PDFs/fotos).
   pastaArquivos_();
   var url = ss_().getUrl();
+  var pastaUrl = '';
+  try { pastaUrl = pastaBase_().getUrl(); } catch (e) {}
   Logger.log('Planilha pronta: ' + url);
-  return 'Planilha configurada com sucesso.\nPlanilha (banco de dados): ' + url;
+  if (pastaUrl) Logger.log('Pasta no Drive: ' + pastaUrl);
+  return 'Planilha configurada com sucesso.\n'
+    + (pastaUrl ? 'Pasta no Drive: ' + pastaUrl + '\n' : '')
+    + 'Planilha (banco de dados): ' + url;
 }
 
 /** Adiciona um menu na planilha para rodar o setup facilmente. */
@@ -329,12 +367,16 @@ function excluirFuncionario(id) {
 // ─── DRIVE: FOTOS E PDF ────────────────────────────────────────────
 /** Pasta no Drive onde ficam as fotos e os PDFs de laudo. */
 function pastaArquivos_() {
-  var props = PropertiesService.getDocumentProperties();
+  var props = PropertiesService.getScriptProperties();
   var id = props.getProperty('folderId');
   if (id) {
     try { return DriveApp.getFolderById(id); } catch (e) {}
   }
-  var folder = DriveApp.createFolder('BioFábrica — Fotos e Laudos');
+  // Subpasta "Fotos e Laudos" dentro da pasta base, para manter tudo junto.
+  var base;
+  try { base = pastaBase_(); } catch (e) { base = null; }
+  var folder = base ? base.createFolder('Fotos e Laudos')
+                    : DriveApp.createFolder('BioFábrica — Fotos e Laudos');
   props.setProperty('folderId', folder.getId());
   return folder;
 }
