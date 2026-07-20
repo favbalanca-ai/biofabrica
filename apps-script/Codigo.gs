@@ -106,11 +106,68 @@ const LAUDO_NOTAS = [
 ];
 
 // ─── ENTRADA WEB ───────────────────────────────────────────────────
-function doGet() {
+// doGet: sem parâmetro serve a tela (HtmlService); com ?fn=... responde JSON
+// (útil para o app do GitHub Pages testar a conexão).
+function doGet(e) {
+  if (e && e.parameter && e.parameter.fn) return apiRouter_(e.parameter.fn, e.parameter);
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('BioFábrica · Controle de Produção')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// doPost: API JSON usada pelo app hospedado no GitHub Pages.
+// O app envia o corpo como text/plain (evita o preflight CORS do Apps Script):
+//   body = { "fn": "salvarLote", "args": [ ... ] }
+function doPost(e) {
+  var body = {};
+  try { body = (e && e.postData && e.postData.contents) ? JSON.parse(e.postData.contents) : {}; } catch (err) {}
+  return apiRouter_(body.fn, body, body.args || []);
+}
+
+// Mapa explícito de funções expostas (allowlist). Só estas podem ser chamadas de fora.
+function apiHandlers_() {
+  return {
+    getEstado: getEstado,
+    salvarLote: salvarLote,
+    excluirLote: excluirLote,
+    setFermentadorStatus: setFermentadorStatus,
+    salvarCatalogo: salvarCatalogo,
+    excluirCatalogo: excluirCatalogo,
+    addFuncionario: addFuncionario,
+    excluirFuncionario: excluirFuncionario,
+    addMedicao: addMedicao,
+    excluirMedicao: excluirMedicao,
+    addAjuste: addAjuste,
+    excluirAjuste: excluirAjuste,
+    addVisita: addVisita,
+    atualizarVisita: atualizarVisita,
+    excluirVisita: excluirVisita,
+    addAcao: addAcao,
+    excluirAcao: excluirAcao,
+    salvarFoto: salvarFoto,
+    excluirFoto: excluirFoto,
+    gerarLaudoPdf: gerarLaudoPdf,
+  };
+}
+
+// Executa uma função da allowlist e devolve JSON { ok, data } ou { ok:false, error }.
+function apiRouter_(fn, body, args) {
+  var out;
+  try {
+    var handlers = apiHandlers_();
+    if (!fn || !handlers.hasOwnProperty(fn)) throw new Error('Função não permitida: ' + fn);
+    // Se args não veio (ex.: GET), tenta reconstruir de body.args em JSON.
+    if (!args) {
+      args = [];
+      if (body && body.args) { try { args = JSON.parse(body.args); } catch (e2) { args = [body.args]; } }
+    }
+    var data = handlers[fn].apply(null, args || []);
+    out = { ok: true, data: data };
+  } catch (err) {
+    out = { ok: false, error: String((err && err.message) || err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ─── PLANILHA ──────────────────────────────────────────────────────

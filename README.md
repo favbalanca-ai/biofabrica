@@ -12,9 +12,11 @@ fermentadores, lotes de bioinsumos, cadastros, fluxo de produção, laudo e aná
 - **Onde roda:** GitHub Pages — a página inicial (`index.html`) encaminha para [`app/`](app/),
   que é o app de verdade. Não depende do `script.google.com`.
 - **Dados:** ficam **no aparelho** (localStorage). Cada celular tem os seus. Funciona sem internet.
-- **Sincronização com a planilha (opcional):** dá para ligar depois uma sincronização com o
-  Google Sheets (via Apps Script) para compartilhar dados entre celulares — o backend está
-  pronto em [`apps-script/`](apps-script/).
+- **Sincronização com a planilha (opcional, já disponível):** em **📊 Painel → Sincronização
+  com a planilha**, cole a URL do Apps Script (`/exec`) e toque em **Salvar e conectar**. A partir
+  daí o app grava na **planilha do Google** e os dados são **compartilhados entre celulares**
+  (com fila offline: sem internet salva no aparelho e sincroniza sozinho depois). O backend está
+  em [`apps-script/`](apps-script/) — publique-o com **Quem pode acessar: Qualquer pessoa**.
 
 ## Principais recursos
 

@@ -286,6 +286,33 @@ function gcall(name){
 }
 var USANDO_GOOGLE = (typeof google!=="undefined" && google.script && google.script.run);
 
+// ─── Configuração de sincronização (URL do Apps Script /exec) ──────
+var CFG_KEY="biofabrica_cfg_v1";
+function cfgLoad(){ try{ return JSON.parse(localStorage.getItem(CFG_KEY))||{}; }catch(e){ return {}; } }
+function cfgSave(c){ try{ localStorage.setItem(CFG_KEY, JSON.stringify(c||{})); }catch(e){} }
+function scriptUrl(){ return String((cfgLoad().scriptUrl)||"").trim(); }
+function usandoHttp(){ return !USANDO_GOOGLE && !!scriptUrl(); }
+function usandoServidor(){ return USANDO_GOOGLE || usandoHttp(); }
+
+// Chamada HTTP ao Apps Script (GitHub Pages). text/plain evita o preflight CORS.
+function hcall(name){
+  var args=[].slice.call(arguments,1);
+  return fetch(scriptUrl(), {
+    method:"POST", redirect:"follow",
+    headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body: JSON.stringify({ fn:name, args:args })
+  }).then(function(r){ return r.json(); }).then(function(j){
+    if(j && j.ok) return j.data;
+    throw new Error((j && j.error) || "Erro no servidor");
+  });
+}
+// Chamada unificada: Apps Script embutido (google.script.run) ou HTTP.
+function servercall(name){
+  var args=[].slice.call(arguments,1);
+  if(USANDO_GOOGLE) return gcall.apply(null,[name].concat(args));
+  return hcall.apply(null,[name].concat(args));
+}
+
 var OUTBOX_KEY="biofabrica_outbox_v2";
 function outboxLoad(){ try{ return JSON.parse(localStorage.getItem(OUTBOX_KEY))||[]; }catch(e){ return []; } }
 function outboxSave(q){ try{ localStorage.setItem(OUTBOX_KEY, JSON.stringify(q)); }catch(e){} }
@@ -297,7 +324,7 @@ function enfileirar(name,args,coalesce){
   outboxSave(q); atualizarSync();
 }
 function envio(name,args,otimista,coalesce){
-  return gcall.apply(null,[name].concat(args)).then(function(r){ atualizarSync(); return r; }).catch(function(){
+  return servercall.apply(null,[name].concat(args)).then(function(r){ atualizarSync(); return r; }).catch(function(){
     enfileirar(name,args,coalesce);
     toast("Sem conexão — salvo no aparelho, sincroniza sozinho.","err");
     return otimista;
@@ -305,11 +332,11 @@ function envio(name,args,otimista,coalesce){
 }
 var _flushing=false;
 function flushOutbox(){
-  if(_flushing || !USANDO_GOOGLE) return Promise.resolve();
+  if(_flushing || !usandoServidor()) return Promise.resolve();
   if(typeof navigator!=="undefined" && navigator.onLine===false){ atualizarSync(); return Promise.resolve(); }
   var q=outboxLoad(); if(!q.length){ atualizarSync(); return Promise.resolve(); }
   _flushing=true; var it=q[0];
-  return gcall.apply(null,[it.name].concat(it.args)).then(function(){
+  return servercall.apply(null,[it.name].concat(it.args)).then(function(){
     outboxSave(outboxLoad().filter(function(x){ return x.qid!==it.qid; }));
     _flushing=false; atualizarSync(); return flushOutbox();
   }).then(function(){ if(!outboxCount() && S.estado && !document.hidden) autoSync(); })
@@ -324,8 +351,8 @@ function atualizarSync(){
   clearTimeout(atualizarSync._t); atualizarSync._t=setTimeout(function(){ var x=el("sync"); if(x&&!outboxCount()) x.className="sync"; },2500);
 }
 
-var api = USANDO_GOOGLE ? {
-  getEstado:function(){return gcall("getEstado");},
+function serverApi(){ return {
+  getEstado:function(){return servercall("getEstado");},
   salvarLote:function(l){return envio("salvarLote",[l],l,"lote:"+l.id);},
   excluirLote:function(id){return envio("excluirLote",[id],true,"dellote:"+id);},
   setFermentadorStatus:function(id,s){return envio("setFermentadorStatus",[id,s],true,"ferstatus:"+id);},
@@ -342,10 +369,11 @@ var api = USANDO_GOOGLE ? {
   excluirVisita:function(id){return envio("excluirVisita",[id],true);},
   addAcao:function(a){return envio("addAcao",[a],a);},
   excluirAcao:function(id){return envio("excluirAcao",[id],true);},
-  salvarFoto:function(f){return gcall("salvarFoto",f);},
+  salvarFoto:function(f){return servercall("salvarFoto",f);},
   excluirFoto:function(id){return envio("excluirFoto",[id],true);},
-  gerarLaudoPdf:function(id){return gcall("gerarLaudoPdf",id);},
-} : mockApi();
+  gerarLaudoPdf:function(id){return servercall("gerarLaudoPdf",id);},
+}; }
+var api = usandoServidor() ? serverApi() : mockApi();
 
 function mockApi(){
   var KEY="biofabrica_mock_v3";
@@ -641,6 +669,7 @@ function viewPainel(){
       +'<div class="stat" style="border-top-color:#3d6b3d"><b style="color:#3d6b3d;font-size:20px">'+disp+'</b><span>Disponíveis</span></div>'
       +'<div class="stat" style="border-top-color:#5a7fa8"><b style="color:#5a7fa8;font-size:20px">'+(S.estado.lotes||[]).length+'</b><span>Lotes registrados</span></div>'
     +'</div>'
+    +cardSync()
     +'<div class="card" style="border-left:5px solid #c8860a"><div class="sec-title">Backup dos dados (importante)</div>'
     +'<p class="muted" style="margin-top:0">Os dados ficam <b>neste aparelho</b>. Para não perder (o navegador pode limpar sozinho), faça um <b>backup</b> de vez em quando e guarde o arquivo. Instale o app na tela inicial para durar mais.</p>'
     +'<button class="btn sec" id="btnExport">⬇ Exportar backup (arquivo)</button>'
@@ -672,6 +701,81 @@ function importarBackup(file){
     }catch(err){ toast("Arquivo de backup inválido","err"); }
   };
   r.readAsText(file);
+}
+// Cartão de configuração da sincronização (URL do Apps Script /exec).
+function cardSync(){
+  var url=scriptUrl();
+  var conectado = USANDO_GOOGLE || usandoHttp();
+  var statusHtml = conectado
+    ? '<span class="badge" style="background:#eaf5ea;border-color:#4a7c59;color:#2d5c3a"><span class="dot" style="background:#4a7c59"></span>Sincronizando com a planilha</span>'
+    : '<span class="badge" style="background:#fff4d6;border-color:#c8860a;color:#8a5c00"><span class="dot" style="background:#c8860a"></span>Somente neste aparelho</span>';
+  var h='<div class="card" style="border-left:5px solid var(--brand)"><div class="sec-title">Sincronização com a planilha (nuvem)</div>'
+    +'<p style="margin-top:0">'+statusHtml+'</p>';
+  if(USANDO_GOOGLE){
+    return h+'<p class="muted">O app está rodando dentro do Apps Script — já grava direto na planilha.</p></div>';
+  }
+  h+='<p class="muted" style="margin-top:0">Cole o endereço do app publicado no Apps Script (termina em <b>/exec</b>) para os dados ficarem na <b>planilha</b> e serem compartilhados entre os celulares.</p>'
+    +'<div class="field"><label>URL do Apps Script (/exec)</label><input id="sy_url" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="'+esc(url)+'"></div>'
+    +'<div class="btn-row"><button class="btn small" id="btnSalvarSync">🔗 Salvar e conectar</button>'
+    +'<button class="btn sec small" id="btnTestarSync">🔎 Testar conexão</button></div>';
+  if(usandoHttp()){
+    h+='<hr style="border:none;border-top:1px solid var(--line);margin:14px 0">'
+      +'<p class="muted" style="margin-top:0">Já tem dados neste aparelho? Envie uma vez para a planilha:</p>'
+      +'<button class="btn sec small" id="btnMigrar">⬆ Enviar dados deste aparelho para a planilha</button>'
+      +'<button class="btn danger small" id="btnDesligarSync" style="margin-top:8px">Desligar sincronização</button>';
+  }
+  h+='<p class="muted" style="margin-top:12px;font-size:12px">Ao publicar o Apps Script, escolha <b>Quem pode acessar: Qualquer pessoa</b> — é o que permite o app da web ler e gravar na planilha.</p></div>';
+  return h;
+}
+function salvarSync(){
+  var u=val("sy_url").trim();
+  if(u && !/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)){
+    if(!confirm("O endereço normalmente termina em /exec. Salvar mesmo assim?")) return;
+  }
+  var c=cfgLoad(); c.scriptUrl=u; cfgSave(c);
+  toast(u?"Conectado. Recarregando…":"Sincronização desligada.");
+  setTimeout(function(){ location.reload(); }, 700);
+}
+function desligarSync(){
+  if(!confirm("Desligar a sincronização? O app volta a usar só os dados deste aparelho.")) return;
+  var c=cfgLoad(); c.scriptUrl=""; cfgSave(c);
+  toast("Sincronização desligada."); setTimeout(function(){ location.reload(); }, 400);
+}
+function testarSync(){
+  var u=val("sy_url").trim(); if(!u){ toast("Cole a URL primeiro.","err"); return; }
+  overlay(true);
+  fetch(u+(u.indexOf("?")<0?"?":"&")+"fn=getEstado", {method:"GET", redirect:"follow"})
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      overlay(false);
+      if(j && j.ok){ var d=j.data||{}; toast("Conexão OK · "+((d.lotes||[]).length)+" lote(s) na planilha."); }
+      else throw new Error((j&&j.error)||"resposta inválida");
+    })
+    .catch(function(e){ overlay(false); toast("Falhou: "+e.message+" — confira a URL e o acesso 'Qualquer pessoa'.","err"); });
+}
+function migrarLocal(){
+  var raw; try{ raw=JSON.parse(localStorage.getItem("biofabrica_mock_v3")); }catch(e){ raw=null; }
+  if(!raw){ toast("Nada para enviar neste aparelho.","err"); return; }
+  if(!confirm("Enviar os dados deste aparelho para a planilha? Itens com o mesmo código serão atualizados.")) return;
+  var T=[];
+  (raw.organismos||[]).forEach(function(o){ T.push(["salvarCatalogo",["organismo",o]]); });
+  (raw.inoculos||[]).forEach(function(o){ T.push(["salvarCatalogo",["inoculo",o]]); });
+  (raw.meios||[]).forEach(function(o){ T.push(["salvarCatalogo",["meio",o]]); });
+  (raw.produtos||[]).forEach(function(o){ T.push(["salvarCatalogo",["produto",o]]); });
+  (raw.funcionarios||[]).forEach(function(o){ T.push(["addFuncionario",[o]]); });
+  (raw.lotes||[]).forEach(function(o){ T.push(["salvarLote",[o]]); });
+  (raw.visitas||[]).forEach(function(o){ T.push(["addVisita",[o]]); });
+  (raw.acoes||[]).forEach(function(o){ T.push(["addAcao",[o]]); });
+  (raw.ajustes||[]).forEach(function(o){ T.push(["addAjuste",[o]]); });
+  (raw.medicoes||[]).forEach(function(o){ T.push(["addMedicao",[o]]); });
+  Object.keys(raw.ferStatus||{}).forEach(function(id){ var s=raw.ferStatus[id]; if(s && s!=="Disponível") T.push(["setFermentadorStatus",[id,s]]); });
+  if(!T.length){ toast("Nada para enviar.","err"); return; }
+  overlay(true); var i=0, erros=0;
+  (function passo(){
+    if(i>=T.length){ overlay(false); toast("Enviados "+(T.length-erros)+"/"+T.length+" itens."+(erros?" ("+erros+" falharam)":"")); carregar(); return; }
+    var t=T[i++];
+    servercall.apply(null,[t[0]].concat(t[1])).then(passo,function(){ erros++; passo(); });
+  })();
 }
 function blocoAnalise(){
   var base=lotesAnalisaveis();
@@ -1673,7 +1777,7 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnCSV,#btnExport,#btnImport");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -1707,6 +1811,10 @@ function bind(){
     if(t.id==="btnCSV"){ exportarCSV(); return; }
     if(t.id==="btnExport"){ exportarBackup(); return; }
     if(t.id==="btnImport"){ var ii=el("importInput"); if(ii) ii.click(); return; }
+    if(t.id==="btnSalvarSync"){ salvarSync(); return; }
+    if(t.id==="btnTestarSync"){ testarSync(); return; }
+    if(t.id==="btnMigrar"){ migrarLocal(); return; }
+    if(t.id==="btnDesligarSync"){ desligarSync(); return; }
     if(t.id==="btnSalvarFicha"){ salvarFicha(); return; }
     if(t.id==="btnFinalizar"){ finalizarProducao(); return; }
     if(t.id==="btnExcluir"){ excluirLote(); return; }
