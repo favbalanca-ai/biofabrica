@@ -197,7 +197,7 @@ var OBJ_VISITA = ["Preparo inicial","Inoculação","Verificação de processo","
 var TIPO_ACAO = ["Coleta","Vistoria"];
 var FOTO_CAT = ["Placa diluição 10-4","Placa diluição 10-5","Microscopia/Gram","Outros (sem choque)","Outra"];
 var SUBSTRATOS = ["","Arroz","Sorgo","Outro"];
-var APP_BUILD = "v5";  // versão do app (bate com o cache do service worker)
+var APP_BUILD = "v6";  // versão do app (bate com o cache do service worker)
 // Faixas-alvo (pH e temperatura) por microrganismo — base científica para a análise.
 var FAIXAS=[
   {chave:"bacillus",     ph:[6.5,7.5], temp:[30,37]},
@@ -414,7 +414,7 @@ function mockApi(){
 }
 
 // ─── ESTADO ────────────────────────────────────────────────────────
-var S = { estado:null, view:"mapa", aFer:null, aLoteId:null, aVisitaId:null, secao:"ficha", cadAba:"produtos", usuario:"" };
+var S = { estado:null, view:"mapa", aFer:null, aLoteId:null, aVisitaId:null, secao:"ficha", cadAba:"produtos", usuario:"", editCad:null };
 function loteAtual(){ return (S.estado.lotes||[]).find(function(l){return l.id===S.aLoteId;}); }
 function lotesDe(ferId){ return (S.estado.lotes||[]).filter(function(l){return l.fermentador===ferId;}); }
 function ferConfig(id){ return (S.estado.config||[]).find(function(f){return f.id===id;})||{volume:""}; }
@@ -1022,47 +1022,57 @@ function viewCadastros(){
 }
 function cadFuncionarios(){
   var fs=(S.estado.funcionarios||[]);
-  var funcOpts=FUNCAO_OPT.map(function(o){return '<option>'+o+'</option>';}).join("");
-  var h='<div class="card"><div class="sec-title">Cadastrar funcionário</div>'
-    +field("Nome completo","fn_nome","","text","Ex: Luanna Antônio Santos")
+  var ed = (S.editCad && S.editCad.tipo==="funcionario") ? fs.find(function(x){return x.id===S.editCad.id;}) : null;
+  var cur = ed || {};
+  var funcOpts=FUNCAO_OPT.map(function(o){return '<option'+(o===cur.funcao?" selected":"")+'>'+o+'</option>';}).join("");
+  var h='<div class="card"'+(ed?' style="border:2px solid var(--brand)"':'')+'><div class="sec-title">'+(ed?"✏️ Editar funcionário":"Cadastrar funcionário")+'</div>'
+    +field("Nome completo","fn_nome",cur.nome||"","text","Ex: Luanna Antônio Santos")
     +'<div class="field"><label>Função</label><select id="fn_funcao">'+funcOpts+'</select></div>'
-    +'<button class="btn green" id="btnAddFunc">＋ Cadastrar</button></div>';
+    +'<div class="btn-row"><button class="btn green" id="btnAddFunc">'+(ed?"💾 Salvar alterações":"＋ Cadastrar")+'</button>'
+    +(ed?'<button class="btn sec" id="btnCancelEdit">Cancelar</button>':'')+'</div></div>';
   if(!fs.length) h+='<div class="vazio">Nenhum funcionário cadastrado ainda.</div>';
   fs.forEach(function(f){
-    h+='<div class="card" style="border-left:5px solid #4a7c59"><div class="row"><div><b>'+esc(f.nome)+'</b>'+(f.funcao?'<div class="muted">'+esc(f.funcao)+'</div>':'')+'</div>'
-      +'<button class="btn danger small" data-delfunc="'+f.id+'">Remover</button></div></div>';
+    h+='<div class="card" style="border-left:5px solid #4a7c59'+(ed&&ed.id===f.id?';outline:2px solid var(--brand)':'')+'"><div class="row"><div><b>'+esc(f.nome)+'</b>'+(f.funcao?'<div class="muted">'+esc(f.funcao)+'</div>':'')+'</div>'
+      +'<div class="btn-row"><button class="btn sec small" data-editfunc="'+f.id+'">✏️ Editar</button>'
+      +'<button class="btn danger small" data-delfunc="'+f.id+'">Remover</button></div></div></div>';
   });
   return h;
 }
 function cadCatalogo(lista){
   var tipo = lista==="inoculos"?"inoculo":lista==="meios"?"meio":lista==="produtos"?"produto":"organismo";
   var temReceita=(tipo==="inoculo"||tipo==="meio");
+  var itens=(S.estado[lista]||[]);
+  var ed = (S.editCad && S.editCad.tipo===tipo) ? itens.find(function(x){return x.id===S.editCad.id;}) : null;
+  var cur = ed || {};
+  var brd = ed?' style="border:2px solid var(--brand)"':'';
+  var acoes = '<div class="btn-row"><button class="btn green" id="btnAddCat" data-tipo="'+tipo+'">'+(ed?"💾 Salvar alterações":"＋ Cadastrar")+'</button>'
+    +(ed?'<button class="btn sec" id="btnCancelEdit">Cancelar</button>':'')+'</div>';
   var h='';
   if(tipo==="produto"){
-    h='<div class="card"><div class="sec-title">Cadastrar produto</div>'
+    h='<div class="card"'+brd+'><div class="sec-title">'+(ed?"✏️ Editar produto":"Cadastrar produto")+'</div>'
       +'<p class="muted" style="margin-top:0">Ao escolher este produto no lote, o app já seleciona o organismo, o inóculo e o meio.</p>'
-      +field("Nome do produto","cat_nome","","text","Ex: BIO HIDRIC")
-      +selNomes("Organismo","cat_organismo",nomesOrg(),"")
-      +selNomes("Inóculo","cat_inoculo",nomesInoc(),"")
-      +selNomes("Meio de cultura","cat_meio",nomesMeio(),"")
-      +'<button class="btn green" id="btnAddCat" data-tipo="produto">＋ Cadastrar produto</button></div>';
+      +field("Nome do produto","cat_nome",cur.nome||"","text","Ex: BIO HIDRIC")
+      +selNomes("Organismo","cat_organismo",nomesOrg(),cur.organismo||"")
+      +selNomes("Inóculo","cat_inoculo",nomesInoc(),cur.inoculo||"")
+      +selNomes("Meio de cultura","cat_meio",nomesMeio(),cur.meio||"")
+      +acoes+'</div>';
   } else {
     var titulo = lista==="organismos"?"organismo":lista==="inoculos"?"inóculo":"meio de cultura";
     var ph = lista==="organismos"?"Ex: Priestia aryabhattai":(lista==="inoculos"?"Ex: BIO HIDRIC":"Ex: SOLUFARM SH");
     var unidOpts=(tipo==="inoculo")?["L","mL","kg","g"]:["kg","g","L","mL"];
-    h='<div class="card"><div class="sec-title">Cadastrar '+titulo+'</div>'
-      +field("Nome","cat_nome","","text",ph)
-      +(temReceita?fieldArea("Receita / preparo","cat_receita","","Ingredientes, proporções e modo de preparo…"):"")
-      +(temReceita?fieldNum("Tempo de produção (horas)","cat_tempo","","Ex: 48"):"")
-      +(temReceita?('<div class="grid2">'+fieldNum("Dose por 1000 L","cat_dose","","Ex: 5","0.01")+fieldSel("Unidade","cat_doseunid",unidOpts,unidOpts[0])+'</div>'
+    h='<div class="card"'+brd+'><div class="sec-title">'+(ed?("✏️ Editar "+titulo):("Cadastrar "+titulo))+'</div>'
+      +field("Nome","cat_nome",cur.nome||"","text",ph)
+      +(temReceita?fieldArea("Receita / preparo","cat_receita",cur.receita||"","Ingredientes, proporções e modo de preparo…"):"")
+      +(temReceita?fieldNum("Tempo de produção (horas)","cat_tempo",cur.tempoHoras||"","Ex: 48"):"")
+      +(temReceita?('<div class="grid2">'+fieldNum("Dose por 1000 L","cat_dose",cur.dose||"","Ex: 5","0.01")+fieldSel("Unidade","cat_doseunid",unidOpts,cur.doseUnid||unidOpts[0])+'</div>'
         +'<p class="muted" style="margin:-6px 0 4px">Quanto usar a cada 1000 L. O app calcula sozinho para o volume do lote.</p>'):"")
-      +'<button class="btn green" id="btnAddCat" data-tipo="'+tipo+'">＋ Cadastrar</button></div>';
+      +acoes+'</div>';
   }
-  var itens=(S.estado[lista]||[]);
   if(!itens.length) h+='<div class="vazio">Nada cadastrado ainda.</div>';
   itens.forEach(function(it){
-    h+='<div class="card" style="border-left:5px solid #6b4c20"><div class="row"><b>'+esc(it.nome)+'</b>'
-      +'<button class="btn danger small" data-delcat="'+tipo+'|'+it.id+'">Remover</button></div>'
+    h+='<div class="card" style="border-left:5px solid #6b4c20'+(ed&&ed.id===it.id?';outline:2px solid var(--brand)':'')+'"><div class="row"><b>'+esc(it.nome)+'</b>'
+      +'<div class="btn-row"><button class="btn sec small" data-editcat="'+tipo+'|'+it.id+'">✏️ Editar</button>'
+      +'<button class="btn danger small" data-delcat="'+tipo+'|'+it.id+'">Remover</button></div></div>'
       +(tipo==="produto"?'<div class="muted" style="margin-top:4px">🦠 '+esc(it.organismo||"—")+' · 🧫 '+esc(it.inoculo||"—")+' · ⚗️ '+esc(it.meio||"—")+'</div>':"")
       +(it.dose?'<div class="muted" style="margin-top:4px">⚖️ Dose: '+esc(it.dose)+' '+esc(it.doseUnid||"")+' / 1000 L</div>':"")
       +(it.tempoHoras?'<div class="muted" style="margin-top:4px">⏱ '+esc(it.tempoHoras)+' h</div>':'')
@@ -1626,12 +1636,16 @@ function persistLote(l,msg){
 // ─── CADASTROS: AÇÕES ──────────────────────────────────────────────
 function addCatalogo(tipo){
   var nome=val("cat_nome").trim(); if(!nome){ toast("Informe o nome.","err"); return; }
-  var item={ id:makeId(), nome:nome };
+  var editando = !!(S.editCad && S.editCad.tipo===tipo);
+  var item={ id: editando ? S.editCad.id : makeId(), nome:nome };
   if(tipo==="inoculo"||tipo==="meio"){ item.receita=val("cat_receita"); item.tempoHoras=val("cat_tempo"); item.dose=val("cat_dose"); item.doseUnid=val("cat_doseunid"); }
   if(tipo==="produto"){ item.organismo=val("cat_organismo"); item.inoculo=val("cat_inoculo"); item.meio=val("cat_meio"); }
   overlay(true);
-  api.salvarCatalogo(tipo,item).then(function(rec){ S.estado[catLista(tipo)].push(rec||item); overlay(false); render(); toast("Cadastrado."); })
-    .catch(function(){ overlay(false); toast("Erro","err"); });
+  api.salvarCatalogo(tipo,item).then(function(rec){
+    var k=catLista(tipo), arr=S.estado[k], i=arr.findIndex(function(x){return x.id===item.id;});
+    if(i<0) arr.push(rec||item); else arr[i]=rec||item;
+    S.editCad=null; overlay(false); render(); toast(editando?"Cadastro atualizado.":"Cadastrado.");
+  }).catch(function(){ overlay(false); toast("Erro","err"); });
 }
 function delCatalogo(tipo,id){
   overlay(true);
@@ -1640,10 +1654,17 @@ function delCatalogo(tipo,id){
 }
 function addFuncionario(){
   var nome=val("fn_nome").trim(); if(!nome){ toast("Informe o nome.","err"); return; }
-  var f={ id:makeId(), nome:nome, funcao:val("fn_funcao") };
+  var editando = !!(S.editCad && S.editCad.tipo==="funcionario");
+  var f={ id: editando ? S.editCad.id : makeId(), nome:nome, funcao:val("fn_funcao") };
   overlay(true);
-  api.addFuncionario(f).then(function(rec){ S.estado.funcionarios.push(rec||f); overlay(false); render(); toast("Funcionário cadastrado."); })
-    .catch(function(){ overlay(false); toast("Erro","err"); });
+  // Como o backend só faz "adicionar" funcionário, ao editar removemos o antigo e
+  // adicionamos com o mesmo id (mantém a fila/ordem offline).
+  var prep = editando ? api.excluirFuncionario(f.id).catch(function(){}) : Promise.resolve();
+  prep.then(function(){ return api.addFuncionario(f); }).then(function(rec){
+    var arr=S.estado.funcionarios, i=arr.findIndex(function(x){return x.id===f.id;});
+    if(i<0) arr.push(rec||f); else arr[i]=rec||f;
+    S.editCad=null; overlay(false); render(); toast(editando?"Funcionário atualizado.":"Funcionário cadastrado.");
+  }).catch(function(){ overlay(false); toast("Erro","err"); });
 }
 function delFuncionario(id){
   overlay(true);
@@ -1879,7 +1900,7 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -1894,9 +1915,11 @@ function bind(){
     if(t.dataset.delfoto){ delFoto(t.dataset.delfoto); return; }
     if(t.dataset.sec){ S.secao=t.dataset.sec; render(); return; }
     if(t.dataset.secnav){ passarAba(t.dataset.secnav); return; }
-    if(t.dataset.cadaba){ S.cadAba=t.dataset.cadaba; render(); return; }
+    if(t.dataset.cadaba){ S.cadAba=t.dataset.cadaba; S.editCad=null; render(); return; }
     if(t.dataset.delcat){ var pc=t.dataset.delcat.split("|"); delCatalogo(pc[0],pc[1]); return; }
+    if(t.dataset.editcat){ var pe=t.dataset.editcat.split("|"); S.editCad={tipo:pe[0],id:pe[1]}; render(); return; }
     if(t.dataset.delfunc){ delFuncionario(t.dataset.delfunc); return; }
+    if(t.dataset.editfunc){ S.editCad={tipo:"funcionario",id:t.dataset.editfunc}; render(); return; }
     if(t.dataset.delmed){ delMedicao(t.dataset.delmed); return; }
     if(t.dataset.delajuste){ delAjuste(t.dataset.delajuste); return; }
     if(t.id==="btnAddMed"){ addMedicao(); return; }
@@ -1925,6 +1948,7 @@ function bind(){
     if(t.id==="btnExcluir"){ excluirLote(); return; }
     if(t.id==="btnAddCat"){ addCatalogo(t.dataset.tipo); return; }
     if(t.id==="btnAddFunc"){ addFuncionario(); return; }
+    if(t.id==="btnCancelEdit"){ S.editCad=null; render(); return; }
   };
   app.onchange=function(ev){
     if(ev.target.dataset && ev.target.dataset.prod!==undefined){ aplicarProduto(ev.target.value); return; }
