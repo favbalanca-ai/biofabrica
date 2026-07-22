@@ -566,9 +566,18 @@ function carregar(){
     .catch(function(err){ overlay(false); toast("Erro ao carregar: "+(err&&err.message||err),"err"); render(); });
 }
 var VIEWS_SYNC = { mapa:1, cadastros:1, visitas:1, painel:1 };
+// Verdadeiro quando o usuário está digitando/selecionando num campo — nesse caso
+// NÃO recarregamos a tela (senão o texto sendo digitado é apagado).
+function digitando(){
+  var a=document.activeElement;
+  if(!a) return false;
+  var t=a.tagName;
+  return t==="INPUT" || t==="SELECT" || t==="TEXTAREA" || a.isContentEditable;
+}
 function autoSync(){
   if(document.hidden || !S.estado || !VIEWS_SYNC[S.view]) return;
-  api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; render(); }).catch(function(){});
+  if(digitando()) return; // não interrompe quem está preenchendo um formulário
+  api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; if(!digitando()) render(); }).catch(function(){});
 }
 
 // ─── RENDER ────────────────────────────────────────────────────────
