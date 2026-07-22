@@ -197,6 +197,7 @@ var OBJ_VISITA = ["Preparo inicial","Inoculação","Verificação de processo","
 var TIPO_ACAO = ["Coleta","Vistoria"];
 var FOTO_CAT = ["Placa diluição 10-4","Placa diluição 10-5","Microscopia/Gram","Outros (sem choque)","Outra"];
 var SUBSTRATOS = ["","Arroz","Sorgo","Outro"];
+var APP_BUILD = "v5";  // versão do app (bate com o cache do service worker)
 // Faixas-alvo (pH e temperatura) por microrganismo — base científica para a análise.
 var FAIXAS=[
   {chave:"bacillus",     ph:[6.5,7.5], temp:[30,37]},
@@ -562,10 +563,13 @@ function lotesAnalisaveis(){ return (S.estado.lotes||[]).map(consolidarLote).fil
 // ─── CARREGAR / SYNC ───────────────────────────────────────────────
 function carregar(){
   overlay(true);
-  return api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; overlay(false); render(); })
+  return api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; _ultimoSync=nowDT(); overlay(false); render(); })
     .catch(function(err){ overlay(false); toast("Erro ao carregar: "+(err&&err.message||err),"err"); render(); });
 }
-var VIEWS_SYNC = { mapa:1, cadastros:1, visitas:1, painel:1 };
+// Só o MAPA se atualiza sozinho (não tem campos de digitação). Telas com formulário
+// (cadastros, painel, visitas, diagnóstico) NÃO recarregam sozinhas — senão apagam o
+// que está sendo digitado. Elas atualizam ao entrar na aba ou no botão ⟳.
+var VIEWS_SYNC = { mapa:1 };
 // Verdadeiro quando o usuário está digitando/selecionando num campo — nesse caso
 // NÃO recarregamos a tela (senão o texto sendo digitado é apagado).
 function digitando(){
@@ -577,7 +581,7 @@ function digitando(){
 function autoSync(){
   if(document.hidden || !S.estado || !VIEWS_SYNC[S.view]) return;
   if(digitando()) return; // não interrompe quem está preenchendo um formulário
-  api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; if(!digitando()) render(); }).catch(function(){});
+  api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; _ultimoSync=nowDT(); if(!digitando()) render(); }).catch(function(){});
 }
 
 // ─── RENDER ────────────────────────────────────────────────────────
@@ -597,6 +601,7 @@ function render(){
     else if(S.view==="painel") app.innerHTML=viewPainel();
     else if(S.view==="lote") app.innerHTML=viewLote();
     else if(S.view==="historico") app.innerHTML=viewHistorico();
+    else if(S.view==="diag") app.innerHTML=viewDiag();
     else app.innerHTML=viewMapa();
   }catch(err){
     app.innerHTML='<div class="card"><h3>⚠️ Não foi possível montar esta tela</h3>'
@@ -604,11 +609,12 @@ function render(){
       +'<pre style="white-space:pre-wrap;font-size:11px;color:#a05a3a;background:#f6eee0;padding:8px;border-radius:8px;margin-top:10px;overflow:auto">'+esc(String(err&&err.stack||err))+'</pre></div>';
   }
   window.scrollTo(0,0); bind(); tickCountdowns(); renderTabbar();
+  if(S.view==="diag") preencherDiagAsync();
 }
 function renderTabbar(){
   var tb=el("tabbar"); if(!tb) return;
   var atual=({historico:"mapa",lote:"mapa",visita:"visitas"})[S.view]||S.view;
-  var itens=[["mapa","🏭","Início"],["visitas","👥","Visitas"],["cadastros","📚","Cadastros"],["painel","📊","Painel"]];
+  var itens=[["mapa","🏭","Início"],["visitas","👥","Visitas"],["cadastros","📚","Cadastros"],["painel","📊","Painel"],["diag","🩺","Diagnóstico"]];
   tb.innerHTML=itens.map(function(it){ return '<button data-nav="'+it[0]+'" class="'+(atual===it[0]?"on":"")+'"><span class="ic">'+it[1]+'</span>'+it[2]+'</button>'; }).join("");
   tb.onclick=function(ev){ var b=ev.target.closest("[data-nav]"); if(b){ S.view=b.dataset.nav; render(); } };
 }
@@ -678,7 +684,7 @@ function viewPainel(){
       +'<div class="stat" style="border-top-color:#3d6b3d"><b style="color:#3d6b3d;font-size:20px">'+disp+'</b><span>Disponíveis</span></div>'
       +'<div class="stat" style="border-top-color:#5a7fa8"><b style="color:#5a7fa8;font-size:20px">'+(S.estado.lotes||[]).length+'</b><span>Lotes registrados</span></div>'
     +'</div>'
-    +cardSync()
+    +'<div class="card" style="border-left:5px solid var(--brand)"><div class="row"><div><b>'+(usandoServidor()?"☁️ Sincronizando com a planilha":"📵 Somente neste aparelho")+'</b><div class="muted" style="margin-top:2px">Sincronização, conexão e atualização ficam na aba <b>🩺 Diagnóstico</b>.</div></div><button class="btn sec small" data-nav="diag">Abrir</button></div></div>'
     +'<div class="card" style="border-left:5px solid #c8860a"><div class="sec-title">Backup dos dados (importante)</div>'
     +'<p class="muted" style="margin-top:0">Os dados ficam <b>neste aparelho</b>. Para não perder (o navegador pode limpar sozinho), faça um <b>backup</b> de vez em quando e guarde o arquivo. Instale o app na tela inicial para durar mais.</p>'
     +'<button class="btn sec" id="btnExport">⬇ Exportar backup (arquivo)</button>'
@@ -710,6 +716,93 @@ function importarBackup(file){
     }catch(err){ toast("Arquivo de backup inválido","err"); }
   };
   r.readAsText(file);
+}
+// ─── DIAGNÓSTICO (sincronização + atualização) ─────────────────────
+var _ultimoSync=null; // carimbo da última sincronização bem-sucedida
+function modoTexto(){
+  if(USANDO_GOOGLE) return "Apps Script (embutido)";
+  if(usandoHttp()) return "Planilha (nuvem, via internet)";
+  return "Somente neste aparelho";
+}
+function viewDiag(){
+  var online = !(typeof navigator!=="undefined" && navigator.onLine===false);
+  var fila = outboxCount();
+  var e = S.estado||{};
+  var cont = [
+    ["Lotes",(e.lotes||[]).length],["Fermentadores",(e.config||[]).length],
+    ["Produtos",(e.produtos||[]).length],["Organismos",(e.organismos||[]).length],
+    ["Inóculos",(e.inoculos||[]).length],["Meios",(e.meios||[]).length],
+    ["Funcionários",(e.funcionarios||[]).length],["Visitas",(e.visitas||[]).length],
+    ["Leituras",(e.medicoes||[]).length],["Ajustes",(e.ajustes||[]).length],
+  ];
+  var linha=function(k,v){ return '<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)"><span class="muted">'+esc(k)+'</span><b>'+esc(String(v))+'</b></div>'; };
+  var h='<h1>Diagnóstico</h1><p class="sub2">Sincronização e atualização do app.</p>';
+  // Situação agora
+  h+='<div class="card"><div class="sec-title">Situação agora</div>'
+    +linha("Modo", modoTexto())
+    +linha("Conexão", online?"🟢 Online":"🔴 Sem internet")
+    +linha("Itens aguardando envio", fila?("⏳ "+fila):"✓ 0 (tudo enviado)")
+    +linha("Última atualização", _ultimoSync?fmt(_ultimoSync):"—")
+    +linha("Servidor/usuário", S.usuario||"—")
+    +'<button class="btn sec" id="btnRecarregarDiag" style="margin-top:10px">⟳ Recarregar dados agora</button>'
+    +(fila?'<button class="btn danger" id="btnLimparFila" style="margin-top:8px">🗑 Descartar itens da fila ('+fila+')</button>':'')
+    +'</div>';
+  // Sincronização (config)
+  h+=cardSync();
+  // Atualização do app
+  h+='<div class="card"><div class="sec-title">Atualização do app</div>'
+    +linha("Versão do app", APP_BUILD)
+    +'<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)"><span class="muted">Service worker</span><b id="d_sw">verificando…</b></div>'
+    +'<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)"><span class="muted">Cache atual</span><b id="d_cache">verificando…</b></div>'
+    +'<p class="muted" style="margin:10px 0 8px">Se o app não mostrar a última versão (correções novas), force a atualização: limpa o cache e baixa tudo de novo.</p>'
+    +'<button class="btn" id="btnForcarUpd">🔄 Forçar atualização agora</button>'
+    +'</div>';
+  // Contagens
+  h+='<div class="card"><div class="sec-title">Dados carregados</div>'+cont.map(function(c){return linha(c[0],c[1]);}).join("")+'</div>';
+  // Técnico
+  h+='<div class="card"><div class="sec-title">Técnico</div>'
+    +linha("Armazenamento persistente", "verificando…").replace('verificando…','<span id="d_persist">verificando…</span>')
+    +'<div class="row" style="padding:5px 0"><span class="muted">Aparelho</span><b style="font-size:11px;max-width:60%;text-align:right;word-break:break-word">'+esc((navigator&&navigator.userAgent)||"—").slice(0,90)+'</b></div>'
+    +'</div>';
+  return h;
+}
+// Preenche os campos assíncronos do diagnóstico (service worker, cache, storage).
+function preencherDiagAsync(){
+  try{
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.getRegistration().then(function(reg){
+        var e=el("d_sw"); if(e) e.textContent = reg && reg.active ? "🟢 ativo" : "⚪ inativo";
+      }).catch(function(){ var e=el("d_sw"); if(e) e.textContent="—"; });
+    } else { var e=el("d_sw"); if(e) e.textContent="não suportado"; }
+    if(window.caches && caches.keys){
+      caches.keys().then(function(ks){ var e=el("d_cache"); if(e) e.textContent = ks.filter(function(k){return /biofabrica/.test(k);}).join(", ")||"—"; });
+    }
+    if(navigator.storage && navigator.storage.persisted){
+      navigator.storage.persisted().then(function(p){ var e=el("d_persist"); if(e) e.textContent = p?"🟢 sim (protegido)":"⚪ não"; });
+    } else { var ep=el("d_persist"); if(ep) ep.textContent="não suportado"; }
+  }catch(err){}
+}
+function recarregarDiag(){
+  overlay(true);
+  api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; _ultimoSync=nowDT(); overlay(false); render(); toast("Dados atualizados."); })
+    .catch(function(err){ overlay(false); toast("Falha ao atualizar: "+(err&&err.message||err),"err"); });
+}
+function limparFila(){
+  var n=outboxCount(); if(!n) return;
+  if(!confirm("Descartar "+n+" item(ns) que ainda não foram enviados? Isso NÃO apaga o que já está na planilha, mas as alterações pendentes deste aparelho serão perdidas.")) return;
+  outboxSave([]); atualizarSync(); render(); toast("Fila esvaziada.");
+}
+function forcarAtualizacao(){
+  if(!confirm("Forçar atualização? O app vai limpar o cache e recarregar. Seus dados não são apagados.")) return;
+  overlay(true);
+  var passos=[];
+  if('serviceWorker' in navigator){
+    passos.push(navigator.serviceWorker.getRegistrations().then(function(regs){ return Promise.all(regs.map(function(r){ return r.unregister(); })); }).catch(function(){}));
+  }
+  if(window.caches && caches.keys){
+    passos.push(caches.keys().then(function(ks){ return Promise.all(ks.map(function(k){ return caches.delete(k); })); }).catch(function(){}));
+  }
+  Promise.all(passos).then(function(){ setTimeout(function(){ location.reload(); }, 300); });
 }
 // Cartão de configuração da sincronização (URL do Apps Script /exec).
 function cardSync(){
@@ -1786,7 +1879,7 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-delfunc],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -1824,6 +1917,9 @@ function bind(){
     if(t.id==="btnTestarSync"){ testarSync(); return; }
     if(t.id==="btnMigrar"){ migrarLocal(); return; }
     if(t.id==="btnDesligarSync"){ desligarSync(); return; }
+    if(t.id==="btnRecarregarDiag"){ recarregarDiag(); return; }
+    if(t.id==="btnLimparFila"){ limparFila(); return; }
+    if(t.id==="btnForcarUpd"){ forcarAtualizacao(); return; }
     if(t.id==="btnSalvarFicha"){ salvarFicha(); return; }
     if(t.id==="btnFinalizar"){ finalizarProducao(); return; }
     if(t.id==="btnExcluir"){ excluirLote(); return; }

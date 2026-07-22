@@ -1,6 +1,6 @@
 // Service worker do app BioFábrica (PWA no GitHub Pages).
 // Estratégia network-first: busca a versão nova; se estiver offline, usa o cache.
-var CACHE = "biofabrica-app-v4";
+var CACHE = "biofabrica-app-v5";
 var ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", function (e) {
