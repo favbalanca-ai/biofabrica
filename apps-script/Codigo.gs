@@ -30,6 +30,7 @@ const TAB = {
   PROD:    'Produtos',
   ACOES:   'Acoes',
   MED:     'Medicoes',
+  USERS:   'Usuarios',
 };
 
 const FERMENTADORES = [
@@ -86,6 +87,9 @@ const COLS = {
   [TAB.ACOES]: ['id', 'visitaId', 'tipo', 'fermentador', 'loteId', 'dt', 'obs'],
   // Medições de parâmetros ao longo do processo (série temporal por lote).
   [TAB.MED]: ['id', 'loteId', 'dt', 'ph', 'temperatura', 'oxigenio', 'agitacao', 'obs'],
+  // Usuários do app (controle de acesso). A senha nunca é guardada em texto:
+  // guardamos só o "hash" (SHA-256) + um "sal" aleatório. perfil: admin | operador.
+  [TAB.USERS]: ['id', 'nome', 'senhaHash', 'salt', 'perfil', 'ativo', 'criadoEm'],
 };
 
 // Opções (espelham o Index.html) para desenhar os "checkboxes" no PDF.
@@ -136,6 +140,8 @@ function apiHandlers_() {
     excluirCatalogo: excluirCatalogo,
     addFuncionario: addFuncionario,
     excluirFuncionario: excluirFuncionario,
+    salvarUsuario: salvarUsuario,
+    excluirUsuario: excluirUsuario,
     addMedicao: addMedicao,
     excluirMedicao: excluirMedicao,
     addAjuste: addAjuste,
@@ -360,6 +366,7 @@ function getEstado() {
     acoes: readAll_(TAB.ACOES),
     medicoes: readAll_(TAB.MED),
     fotos: readAll_(TAB.FOTOS),
+    usuarios: readAll_(TAB.USERS).filter(ativo_),
     usuario: usuario_(),
     serverTime: nowIso_(),
   };
@@ -409,6 +416,32 @@ function addFuncionario(f) {
     var func = { id: f.id, nome: f.nome, funcao: f.funcao || '', ativo: true };
     sheet_(TAB.FUNC).appendRow(rowFromObj_(TAB.FUNC, func));
     return func;
+  });
+}
+
+// Usuários (controle de acesso). Grava/atualiza pelo id. A senha chega já como
+// hash (SHA-256) calculado no app — o servidor nunca vê a senha em texto.
+function salvarUsuario(u) {
+  return withLock_(function () {
+    var obj = {
+      id: u.id, nome: u.nome, senhaHash: u.senhaHash || '', salt: u.salt || '',
+      perfil: u.perfil === 'admin' ? 'admin' : 'operador', ativo: true,
+      criadoEm: u.criadoEm || nowIso_(),
+    };
+    var sh = sheet_(TAB.USERS);
+    var row = findRow_(sh, u.id);
+    if (row === -1) sh.appendRow(rowFromObj_(TAB.USERS, obj));
+    else sh.getRange(row, 1, 1, COLS[TAB.USERS].length).setValues([rowFromObj_(TAB.USERS, obj)]);
+    return obj;
+  });
+}
+
+function excluirUsuario(id) {
+  return withLock_(function () {
+    var sh = sheet_(TAB.USERS);
+    var row = findRow_(sh, id);
+    if (row !== -1) sh.deleteRow(row);
+    return true;
   });
 }
 

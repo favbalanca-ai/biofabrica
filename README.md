@@ -18,6 +18,21 @@ fermentadores, lotes de bioinsumos, cadastros, fluxo de produção, laudo e aná
   (com fila offline: sem internet salva no aparelho e sincroniza sozinho depois). O backend está
   em [`apps-script/`](apps-script/) — publique-o com **Quem pode acessar: Qualquer pessoa**.
 
+## Acesso (usuários e senha)
+
+- **Tela de entrada:** cada pessoa entra com **nome e senha**. As ações passam a ficar
+  **registradas com quem fez** (ex.: o operador do lote).
+- **Primeiro acesso:** ao abrir o app pela primeira vez, ele pede para criar o **dono
+  (administrador)**. Depois, o admin cria os demais usuários em **📚 Cadastros → Usuários**
+  (perfil *Administrador* gerencia usuários; *Operador* faz o uso normal).
+- **Senha protegida:** a senha nunca é guardada em texto — só um código embaralhado
+  (hash SHA-256 + sal). Funciona **offline** (entra sem internet) e **sincroniza** entre
+  celulares quando a nuvem está ligada.
+- ⚠️ **Limite honesto:** por ser um app de navegador, isto **barra o acesso casual** e dá
+  **rastreabilidade** — não é proteção contra quem conhece o código. Dica: **crie ao menos
+  dois administradores** para não ficar travado se alguém esquecer a senha (no modo nuvem,
+  também dá para ajustar o usuário direto na aba **Usuarios** da planilha).
+
 ## Principais recursos
 
 - **Mapa de fermentadores** — Série A (4 × 1.500 L) e Série B (6 × 1.000 L), status por cor,
