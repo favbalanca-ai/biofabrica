@@ -352,8 +352,21 @@ function atualizarSync(){
   clearTimeout(atualizarSync._t); atualizarSync._t=setTimeout(function(){ var x=el("sync"); if(x&&!outboxCount()) x.className="sync"; },2500);
 }
 
+// Retrato da última leitura da nuvem, guardado no aparelho. Serve para o app
+// ABRIR OFFLINE no modo nuvem: se a internet cair, mostramos os últimos dados
+// conhecidos em vez de uma tela de erro.
+var SNAP_KEY="biofabrica_snapshot_v1";
+function snapSave(e){ try{ if(e) localStorage.setItem(SNAP_KEY, JSON.stringify(e)); }catch(_){} }
+function snapLoad(){ try{ return JSON.parse(localStorage.getItem(SNAP_KEY))||null; }catch(_){ return null; } }
 function serverApi(){ return {
-  getEstado:function(){return servercall("getEstado");},
+  getEstado:function(){
+    return servercall("getEstado").then(function(e){ snapSave(e); return e; })
+      .catch(function(err){
+        var s=snapLoad();
+        if(s){ s._offline=true; return s; } // sem internet: usa o último retrato salvo
+        throw err;
+      });
+  },
   salvarLote:function(l){return envio("salvarLote",[l],l,"lote:"+l.id);},
   excluirLote:function(id){return envio("excluirLote",[id],true,"dellote:"+id);},
   setFermentadorStatus:function(id,s){return envio("setFermentadorStatus",[id,s],true,"ferstatus:"+id);},
