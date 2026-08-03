@@ -305,7 +305,9 @@ function hcall(name){
     body: JSON.stringify({ fn:name, args:args })
   }).then(function(r){ return r.json(); }).then(function(j){
     if(j && j.ok) return j.data;
-    throw new Error((j && j.error) || "Erro no servidor");
+    // Rejeição do SERVIDOR (ex.: função ainda não publicada no /exec). Marcamos
+    // para a fila offline saber que é um erro do item, não da rede.
+    var e=new Error((j && j.error) || "Erro no servidor"); e.appsError=true; throw e;
   });
 }
 // Chamada unificada: Apps Script embutido (google.script.run) ou HTTP.
@@ -336,13 +338,28 @@ var _flushing=false;
 function flushOutbox(){
   if(_flushing || !usandoServidor()) return Promise.resolve();
   if(typeof navigator!=="undefined" && navigator.onLine===false){ atualizarSync(); return Promise.resolve(); }
-  var q=outboxLoad(); if(!q.length){ atualizarSync(); return Promise.resolve(); }
-  _flushing=true; var it=q[0];
+  if(!outboxCount()){ atualizarSync(); return Promise.resolve(); }
+  _flushing=true;
+  // Uma "passada" tenta cada item UMA vez. Item rejeitado pelo servidor é pulado
+  // (não some, tenta de novo na próxima passada) para NÃO travar os demais.
+  // Falha de rede encerra a passada — tudo continua na fila e tenta depois.
+  return _flushPass({}).then(function(){},function(){}).then(function(){
+    _flushing=false; atualizarSync();
+    if(!outboxCount() && S.estado && !document.hidden) autoSync();
+  });
+}
+function _flushPass(tentados){
+  var q=outboxLoad(), it=null;
+  for(var i=0;i<q.length;i++){ if(!tentados[q[i].qid]){ it=q[i]; break; } }
+  if(!it) return Promise.resolve();                 // nada novo para tentar
+  tentados[it.qid]=true;
   return servercall.apply(null,[it.name].concat(it.args)).then(function(){
     outboxSave(outboxLoad().filter(function(x){ return x.qid!==it.qid; }));
-    _flushing=false; atualizarSync(); return flushOutbox();
-  }).then(function(){ if(!outboxCount() && S.estado && !document.hidden) autoSync(); })
-   .catch(function(){ _flushing=false; atualizarSync(); });
+    atualizarSync(); return _flushPass(tentados);
+  }).catch(function(err){
+    if(err && err.appsError){ atualizarSync(); return _flushPass(tentados); } // pula o item ruim
+    return Promise.reject(err);                      // rede caiu: para a passada
+  });
 }
 function atualizarSync(){
   var e=el("sync"); if(!e) return;
