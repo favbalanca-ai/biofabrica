@@ -453,11 +453,44 @@ function hashSenha(senha,salt){
 var SESSAO_KEY="biofabrica_sessao_v1";
 function sessaoLoad(){ try{ return JSON.parse(localStorage.getItem(SESSAO_KEY))||null; }catch(_){ return null; } }
 function sessaoSave(u){ try{ if(u) localStorage.setItem(SESSAO_KEY, JSON.stringify({id:u.id,nome:u.nome,perfil:u.perfil})); else localStorage.removeItem(SESSAO_KEY); }catch(_){} }
-function usuariosLista(){ return (S.estado && S.estado.usuarios) || []; }
-// Usuário logado (validado contra a lista atual: se foi removido, cai a sessão).
+// Cópia LOCAL dos usuários no aparelho. É o que segura o login: mesmo que o
+// servidor ainda não tenha sincronizado o usuário (backend antigo ou fila
+// offline), a sessão continua válida e o app NÃO desloga ("entra e sai").
+var USERS_KEY="biofabrica_usuarios_v1";
+function usuariosLocais(){ try{ return JSON.parse(localStorage.getItem(USERS_KEY))||[]; }catch(_){ return []; } }
+function usuariosLocaisSave(a){ try{ localStorage.setItem(USERS_KEY, JSON.stringify(a||[])); }catch(_){} }
+function usuarioLocalUpsert(u){ var a=usuariosLocais(); var i=a.findIndex(function(x){return x.id===u.id;}); if(i<0) a.push(u); else a[i]=u; usuariosLocaisSave(a); }
+function usuarioLocalRemove(id){ usuariosLocaisSave(usuariosLocais().filter(function(x){return x.id!==id;})); }
+// Lista efetiva = união do aparelho + do servidor (servidor tem prioridade nos
+// campos, por ser a fonte compartilhada entre celulares).
+function usuariosLista(){
+  var serv=(S.estado && S.estado.usuarios) || [];
+  var loc=usuariosLocais();
+  if(!serv.length && !loc.length) return [];
+  var map={};
+  loc.forEach(function(u){ map[u.id]=u; });
+  serv.forEach(function(u){ map[u.id]=u; });
+  return Object.keys(map).map(function(k){ return map[k]; });
+}
+// Usuário logado (validado contra a lista efetiva: se foi removido, cai a sessão).
 function usuarioAtual(){ var s=sessaoLoad(); if(!s) return null; return usuariosLista().find(function(x){return x.id===s.id;})||null; }
 function ehAdmin(){ var u=usuarioAtual(); return !!(u && u.perfil==="admin"); }
 function precisaPrimeiroAcesso(){ return usuariosLista().length===0; }   // ainda não há nenhum usuário
+// Aplica o estado vindo do servidor SEM derrubar o login: mescla os usuários do
+// servidor na cópia local e mantém S.usuario como o nome de quem está logado.
+function aplicarEstado(e){
+  S.estado=e;
+  try{
+    if(e && e.usuarios && e.usuarios.length){
+      var a=usuariosLocais(), map={};
+      a.forEach(function(u){ map[u.id]=u; });
+      e.usuarios.forEach(function(u){ map[u.id]=u; });
+      usuariosLocaisSave(Object.keys(map).map(function(k){ return map[k]; }));
+    }
+  }catch(_){}
+  var ua=usuarioAtual();
+  S.usuario = ua ? ua.nome : ((e && e.usuario) || "");
+}
 function precisaLogin(){ return !precisaPrimeiroAcesso() && !usuarioAtual(); }
 
 // ─── ESTADO ────────────────────────────────────────────────────────
@@ -610,7 +643,7 @@ function lotesAnalisaveis(){ return (S.estado.lotes||[]).map(consolidarLote).fil
 // ─── CARREGAR / SYNC ───────────────────────────────────────────────
 function carregar(){
   overlay(true);
-  return api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; _ultimoSync=nowDT(); overlay(false); render(); })
+  return api.getEstado().then(function(e){ aplicarEstado(e); _ultimoSync=nowDT(); overlay(false); render(); })
     .catch(function(err){ overlay(false); toast("Erro ao carregar: "+(err&&err.message||err),"err"); render(); });
 }
 // Só o MAPA se atualiza sozinho (não tem campos de digitação). Telas com formulário
@@ -628,7 +661,7 @@ function digitando(){
 function autoSync(){
   if(document.hidden || !S.estado || !VIEWS_SYNC[S.view]) return;
   if(digitando()) return; // não interrompe quem está preenchendo um formulário
-  api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; _ultimoSync=nowDT(); if(!digitando()) render(); }).catch(function(){});
+  api.getEstado().then(function(e){ aplicarEstado(e); _ultimoSync=nowDT(); if(!digitando()) render(); }).catch(function(){});
 }
 
 // ─── RENDER ────────────────────────────────────────────────────────
@@ -668,8 +701,9 @@ function fazerPrimeiroAcesso(){
   overlay(true);
   hashSenha(s1,salt).then(function(h){
     var u={ id:makeId(), nome:nome, senhaHash:h, salt:salt, perfil:"admin", ativo:true, criadoEm:new Date().toISOString() };
+    usuarioLocalUpsert(u);               // guarda no aparelho já (o login não cai)
     return api.salvarUsuario(u).then(function(rec){
-      var uu=rec||u; if(!S.estado.usuarios) S.estado.usuarios=[]; S.estado.usuarios.push(uu);
+      var uu=rec||u; usuarioLocalUpsert(uu); if(!S.estado.usuarios) S.estado.usuarios=[]; S.estado.usuarios.push(uu);
       sessaoSave(uu); S.usuario=uu.nome; overlay(false); S.view="mapa"; render(); toast("Acesso criado. Bem-vindo, "+uu.nome+"!");
     });
   }).catch(function(){ overlay(false); toast("Não foi possível criar o acesso.","err"); });
@@ -903,7 +937,7 @@ function preencherDiagAsync(){
 }
 function recarregarDiag(){
   overlay(true);
-  api.getEstado().then(function(e){ S.estado=e; S.usuario=e.usuario||""; _ultimoSync=nowDT(); overlay(false); render(); toast("Dados atualizados."); })
+  api.getEstado().then(function(e){ aplicarEstado(e); _ultimoSync=nowDT(); overlay(false); render(); toast("Dados atualizados."); })
     .catch(function(err){ overlay(false); toast("Falha ao atualizar: "+(err&&err.message||err),"err"); });
 }
 function limparFila(){
@@ -1143,7 +1177,7 @@ function viewCadastros(){
 }
 // Gestão de usuários do app (só o administrador vê esta aba).
 function cadUsuarios(){
-  var us=(S.estado.usuarios||[]);
+  var us=usuariosLista();
   var ed = (S.editCad && S.editCad.tipo==="usuario") ? us.find(function(x){return x.id===S.editCad.id;}) : null;
   var cur = ed || {};
   var eu = usuarioAtual();
@@ -1168,12 +1202,12 @@ function cadUsuarios(){
   });
   return h;
 }
-function contaAdmins(){ return (S.estado.usuarios||[]).filter(function(x){return x.perfil==="admin";}).length; }
+function contaAdmins(){ return usuariosLista().filter(function(x){return x.perfil==="admin";}).length; }
 function addUsuario(){
   var nome=val("us_nome").trim(); if(!nome){ toast("Informe o nome.","err"); return; }
   var perfil=val("us_perfil")==="admin"?"admin":"operador";
   var editando = !!(S.editCad && S.editCad.tipo==="usuario");
-  var antigo = editando ? (S.estado.usuarios||[]).find(function(x){return x.id===S.editCad.id;}) : null;
+  var antigo = editando ? usuariosLista().find(function(x){return x.id===S.editCad.id;}) : null;
   var senha=val("us_senha");
   if(!editando && senha.length<4){ toast("A senha precisa ter ao menos 4 caracteres.","err"); return; }
   if(editando && senha && senha.length<4){ toast("A nova senha precisa ter ao menos 4 caracteres.","err"); return; }
@@ -1189,19 +1223,21 @@ function addUsuario(){
   hashP.then(function(h){
     var u={ id:id, nome:nome, senhaHash:h, salt:salt, perfil:perfil, ativo:true,
       criadoEm:(antigo&&antigo.criadoEm)||new Date().toISOString() };
+    usuarioLocalUpsert(u);               // guarda no aparelho já
     return api.salvarUsuario(u).then(function(rec){
-      var uu=rec||u; var arr=S.estado.usuarios||(S.estado.usuarios=[]);
+      var uu=rec||u; usuarioLocalUpsert(uu); var arr=S.estado.usuarios||(S.estado.usuarios=[]);
       var i=arr.findIndex(function(x){return x.id===id;}); if(i<0) arr.push(uu); else arr[i]=uu;
       S.editCad=null; overlay(false); render(); toast(editando?"Usuário atualizado.":"Usuário criado.");
     });
   }).catch(function(){ overlay(false); toast("Erro ao salvar usuário.","err"); });
 }
 function delUsuario(id){
-  var u=(S.estado.usuarios||[]).find(function(x){return x.id===id;}); if(!u) return;
+  var u=usuariosLista().find(function(x){return x.id===id;}); if(!u) return;
   var eu=usuarioAtual(); if(eu && eu.id===id){ toast("Você não pode remover a si mesmo.","err"); return; }
   if(u.perfil==="admin" && contaAdmins()<=1){ toast("Precisa haver ao menos um administrador.","err"); return; }
   if(!confirm("Remover o usuário \""+u.nome+"\"? Ele não poderá mais entrar no app.")) return;
   overlay(true);
+  usuarioLocalRemove(id);               // remove do aparelho já
   api.excluirUsuario(id).then(function(){ S.estado.usuarios=(S.estado.usuarios||[]).filter(function(x){return x.id!==id;}); overlay(false); render(); toast("Usuário removido."); })
     .catch(function(){ overlay(false); toast("Erro","err"); });
 }
