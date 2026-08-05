@@ -328,9 +328,10 @@ function enfileirar(name,args,coalesce){
   outboxSave(q); atualizarSync();
 }
 function envio(name,args,otimista,coalesce){
-  return servercall.apply(null,[name].concat(args)).then(function(r){ atualizarSync(); return r; }).catch(function(){
+  return servercall.apply(null,[name].concat(args)).then(function(r){ atualizarSync(); return r; }).catch(function(err){
     enfileirar(name,args,coalesce);
-    toast("Sem conexão — salvo no aparelho, sincroniza sozinho.","err");
+    if(err && err.appsError) toast("Salvo no aparelho. O servidor ainda não aceita esta ação — sincroniza quando o backend for atualizado.","err");
+    else toast("Sem conexão — salvo no aparelho, sincroniza sozinho.","err");
     return otimista;
   });
 }
@@ -678,6 +679,10 @@ function digitando(){
 function autoSync(){
   if(document.hidden || !S.estado || !VIEWS_SYNC[S.view]) return;
   if(digitando()) return; // não interrompe quem está preenchendo um formulário
+  // NÃO recarrega por cima enquanto há alterações na fila: o estado do servidor
+  // ainda não tem essas mudanças e elas sumiriam da tela. Volta a sincronizar
+  // sozinho assim que a fila esvaziar (flushOutbox chama autoSync no fim).
+  if(outboxCount()>0) return;
   api.getEstado().then(function(e){ aplicarEstado(e); _ultimoSync=nowDT(); if(!digitando()) render(); }).catch(function(){});
 }
 
