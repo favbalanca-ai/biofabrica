@@ -8,7 +8,7 @@
 //   • Chamadas ao Google Apps Script (outra origem): NÃO são interceptadas — vão
 //     direto para a internet, para a fila offline do próprio app tratar as falhas.
 //   • Navegação sem internet: cai no index.html guardado no cache.
-var CACHE = "biofabrica-app-v12";
+var CACHE = "biofabrica-app-v13";
 var ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", function (e) {

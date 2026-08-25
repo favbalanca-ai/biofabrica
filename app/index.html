@@ -512,7 +512,7 @@ function aplicarEstado(e){
 function precisaLogin(){ return !precisaPrimeiroAcesso() && !usuarioAtual(); }
 
 // ─── ESTADO ────────────────────────────────────────────────────────
-var S = { estado:null, view:"mapa", aFer:null, aLoteId:null, aVisitaId:null, secao:"ficha", cadAba:"produtos", usuario:"", editCad:null };
+var S = { estado:null, view:"mapa", aFer:null, aLoteId:null, aVisitaId:null, secao:"ficha", cadAba:"produtos", usuario:"", editCad:null, busca:"", histFiltro:"todos" };
 function loteAtual(){ return (S.estado.lotes||[]).find(function(l){return l.id===S.aLoteId;}); }
 function lotesDe(ferId){ return (S.estado.lotes||[]).filter(function(l){return l.fermentador===ferId;}); }
 function ferConfig(id){ return (S.estado.config||[]).find(function(f){return f.id===id;})||{volume:""}; }
@@ -520,6 +520,17 @@ function medidaDe(id){ var f=ferConfig(id); return (f&&f.medida)?f.medida:"L"; }
 function ehSala(id){ return ferConfig(id).tipo==="S"; }
 function nomeUnidade(id){ return id==="S1"?"Sala 1":id==="S2"?"Sala 2":id; }
 function rotuloUnidade(id){ return ehSala(id)?"Sala":"Fermentador"; }
+function rotuloCompleto(id){ return ehSala(id)?nomeUnidade(id):(rotuloUnidade(id)+" "+id); }
+// Data de referência do lote para ordenar/exibir no histórico.
+function dataLote(l){ return l.dtInicio||l.criadoEm||l.dtFim||l.dataColeta||""; }
+// Resultado do laudo formatado para exibição (UFC/mL, conídios/mL ou BC).
+function resultadoLote(l){
+  var r=String((l&&l.resultadoQuantitativo)||"").trim();
+  if(!r) return "";
+  if(/^bc$/i.test(r)) return "BC (baixa contagem)";
+  if(/ufc|con[ií]dios|\/ml/i.test(r)) return r;
+  return r+(ehSala(l.fermentador)?" conídios/mL":" UFC/mL");
+}
 // Capacidade formatada: "1.500 L" (líquido) ou "via sólido" (sala).
 function capUnidade(f){ return (f.tipo==="S") ? "via sólido" : (Number(f.volume).toLocaleString("pt-BR")+" "+(f.medida||"L")); }
 function substratoTxt(l){ return l.tipoSubstrato==="Outro" ? (l.tipoSubstratoOutro||"Outro") : (l.tipoSubstrato||""); }
@@ -770,6 +781,7 @@ function render(){
   }
   try{
     if(S.view==="mapa") app.innerHTML=viewMapa();
+    else if(S.view==="geral") app.innerHTML=viewGeral();
     else if(S.view==="cadastros") app.innerHTML=viewCadastros();
     else if(S.view==="visitas") app.innerHTML=viewVisitas();
     else if(S.view==="visita") app.innerHTML=viewVisitaDetalhe();
@@ -788,8 +800,8 @@ function render(){
 }
 function renderTabbar(){
   var tb=el("tabbar"); if(!tb) return;
-  var atual=({historico:"mapa",lote:"mapa",visita:"visitas"})[S.view]||S.view;
-  var itens=[["mapa","🏭","Início"],["visitas","👥","Visitas"],["cadastros","📚","Cadastros"],["painel","📊","Painel"],["diag","🩺","Diagnóstico"]];
+  var atual=({historico:"mapa",lote:"geral",visita:"visitas"})[S.view]||S.view;
+  var itens=[["mapa","🏭","Início"],["geral","📋","Histórico"],["visitas","👥","Visitas"],["cadastros","📚","Cadastros"],["painel","📊","Painel"],["diag","🩺","Diag."]];
   tb.innerHTML=itens.map(function(it){ return '<button data-nav="'+it[0]+'" class="'+(atual===it[0]?"on":"")+'"><span class="ic">'+it[1]+'</span>'+it[2]+'</button>'; }).join("");
   tb.onclick=function(ev){ var b=ev.target.closest("[data-nav]"); if(b){ S.view=b.dataset.nav; render(); } };
 }
@@ -839,10 +851,54 @@ function viewHistorico(){
   if(!ls.length) h+='<div class="vazio">Nenhum lote registrado neste fermentador ainda.</div>';
   ls.forEach(function(l){
     var c=STATUS_COR[l.status]||STATUS_COR["Disponível"];
+    var res=resultadoLote(l);
     h+='<div class="card" style="border-left:5px solid '+c.bd+'" data-abrir="'+S.aFer+'|'+l.id+'">'
       +'<div class="row" style="margin-bottom:4px"><span class="muted" style="font-family:monospace">'+esc(l.loteNum||l.id)+'</span>'+badge(l.status)+'</div>'
       +(l.produto?'<div style="font-weight:700;font-size:15px">'+esc(l.produto)+(l.microrganismo?' · '+esc(l.microrganismo):'')+'</div>':'')
-      +'<div class="muted" style="margin-top:4px">🗓 '+fmt(l.dtInicio)+(l.dtFim?' → '+fmt(l.dtFim):'')+'</div></div>';
+      +'<div class="muted" style="margin-top:4px">🗓 '+fmt(l.dtInicio)+(l.dtFim?' → '+fmt(l.dtFim):'')+'</div>'
+      +(res?'<div style="margin-top:6px;font-weight:700;color:var(--green)">🔬 '+esc(res)+'</div>':'')+'</div>';
+  });
+  return h;
+}
+
+// ─── HISTÓRICO & RESULTADOS (todas as unidades, com busca) ─────────
+function viewGeral(){
+  var todos=(S.estado.lotes||[]).slice();
+  todos.sort(function(a,b){ return String(dataLote(b)).localeCompare(String(dataLote(a))); });
+  var comResultado=todos.filter(function(l){ return String(l.resultadoQuantitativo||"").trim(); }).length;
+  var termo=(S.busca||"").trim().toLowerCase();
+  var filtro=S.histFiltro||"todos";
+  var ativos=["Em Processo","Aguardando Análise","Em Análise"];
+  var lista=todos.filter(function(l){
+    if(filtro==="processo" && ativos.indexOf(l.status)<0) return false;
+    if(filtro==="concluidos" && l.status!=="Concluído") return false;
+    if(filtro==="resultado" && !String(l.resultadoQuantitativo||"").trim()) return false;
+    if(termo){
+      var alvo=[l.loteNum,l.produto,l.microrganismo,rotuloCompleto(l.fermentador),l.numeroRelatorio,l.cliente].join(" ").toLowerCase();
+      if(alvo.indexOf(termo)<0) return false;
+    }
+    return true;
+  });
+  function chip(id,label){ return '<button class="seg'+((S.histFiltro||"todos")===id?" on":"")+'" data-histf="'+id+'">'+esc(label)+'</button>'; }
+  var h='<h1>Histórico & Resultados</h1>'
+    +'<p class="sub2">Todos os lotes, de todas as unidades. Toque num lote para ver o laudo.</p>'
+    +'<div class="field"><input id="busca" type="search" inputmode="search" autocomplete="off" placeholder="🔎 Buscar produto, lote, organismo, unidade…" value="'+esc(S.busca||"")+'"></div>'
+    +'<div class="segs" style="flex-wrap:wrap;margin-bottom:10px">'
+      +chip("todos","Todos ("+todos.length+")")+chip("processo","Em processo")
+      +chip("concluidos","Concluídos")+chip("resultado","Com resultado ("+comResultado+")")
+    +'</div>';
+  if(!lista.length){ h+='<div class="vazio">'+(todos.length?"Nenhum lote encontrado para essa busca/filtro.":"Nenhum lote registrado ainda.")+'</div>'; return h; }
+  h+='<div class="muted" style="font-size:12px;margin-bottom:6px">'+lista.length+' lote(s)</div>';
+  lista.forEach(function(l){
+    var c=STATUS_COR[l.status]||STATUS_COR["Disponível"];
+    var res=resultadoLote(l);
+    var abrir = res ? ('data-abrirlaudo="'+l.fermentador+'|'+l.id+'"') : ('data-abrir="'+l.fermentador+'|'+l.id+'"');
+    h+='<div class="card" style="border-left:5px solid '+c.bd+'" '+abrir+'>'
+      +'<div class="row" style="margin-bottom:4px"><span class="muted" style="font-family:monospace">'+esc(l.loteNum||l.id)+'</span>'+badge(l.status)+'</div>'
+      +'<div style="font-weight:700;font-size:15px">'+esc(l.produto||"(sem produto)")+(l.microrganismo?' <span class="muted" style="font-weight:400">· '+esc(l.microrganismo)+'</span>':'')+'</div>'
+      +'<div class="muted" style="margin-top:3px">'+esc(rotuloCompleto(l.fermentador))+' · 🗓 '+fmtDate(dataLote(l))+'</div>'
+      +(res?'<div style="margin-top:6px;font-weight:700;color:var(--green)">🔬 '+esc(res)+'</div>':'')
+      +'</div>';
   });
   return h;
 }
@@ -2203,14 +2259,16 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-novo],[data-abrir],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-histf],[data-novo],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
     if(t.dataset.nav){ S.view=t.dataset.nav; render(); return; }
     if(t.dataset.hist){ S.aFer=t.dataset.hist; S.view="historico"; render(); return; }
+    if(t.dataset.histf){ S.histFiltro=t.dataset.histf; render(); return; }
     if(t.dataset.novo){ novoLote(t.dataset.novo); return; }
     if(t.dataset.abrir){ var p=t.dataset.abrir.split("|"); S.aFer=p[0]; S.aLoteId=p[1]; S.secao="ficha"; S.view="lote"; render(); return; }
+    if(t.dataset.abrirlaudo){ var pl=t.dataset.abrirlaudo.split("|"); S.aFer=pl[0]; S.aLoteId=pl[1]; S.secao="analise"; S.view="lote"; render(); return; }
     if(t.dataset.abrirvisita){ S.aVisitaId=t.dataset.abrirvisita; S.view="visita"; render(); return; }
     if(t.dataset.saidav){ registrarSaida(t.dataset.saidav); return; }
     if(t.dataset.delvisitag){ delVisita(t.dataset.delvisitag); return; }
@@ -2276,6 +2334,7 @@ function bind(){
     if(ev.target.id==="importInput"){ var fb=ev.target.files&&ev.target.files[0]; if(fb) importarBackup(fb); ev.target.value=""; return; }
   };
   app.oninput=function(ev){
+    if(ev.target.id==="busca"){ S.busca=ev.target.value; var caret=ev.target.selectionStart; render(); var b=el("busca"); if(b){ b.focus(); try{ b.setSelectionRange(caret,caret); }catch(_){} } return; }
     if(ev.target.id==="r_mant"){ atualizarUFCprev(); }
     if(ev.target.id==="f_volFab"){ atualizarDoses(); }
     if(/^fg_c[12]_\d$/.test(ev.target.id||"")){ atualizarFungoPrev(); }
