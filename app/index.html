@@ -521,6 +521,11 @@ function ehSala(id){ return ferConfig(id).tipo==="S"; }
 function nomeUnidade(id){ return id==="S1"?"Sala 1":id==="S2"?"Sala 2":id; }
 function rotuloUnidade(id){ return ehSala(id)?"Sala":"Fermentador"; }
 function rotuloCompleto(id){ return ehSala(id)?nomeUnidade(id):(rotuloUnidade(id)+" "+id); }
+// Análise avulsa/externa: não vem da produção da fazenda. É guardada como um
+// "lote" com fermentador="AVULSA" (reaproveita todo o laudo/PDF/sincronização).
+function ehAvulsa(l){ return !!(l && l.fermentador==="AVULSA"); }
+// Laudo de fungo: salas (sólido) OU avulsa marcada como fungo.
+function ehFungo(l){ return ehSala(l&&l.fermentador) || !!(l && l.tipoAnalise==="fungo"); }
 // Data de referência do lote para ordenar/exibir no histórico.
 function dataLote(l){ return l.dtInicio||l.criadoEm||l.dtFim||l.dataColeta||""; }
 // Resultado do laudo formatado para exibição (UFC/mL, conídios/mL ou BC).
@@ -667,7 +672,7 @@ function consolidarLote(l){
     nMed:meds.length, nAjustes:ajustesDe(l.id).length, horas:horas,
     ufc:parseUFC(l.resultadoQuantitativo), outros:l.outrosMicrorganismos||"—", status:l.status };
 }
-function lotesAnalisaveis(){ return (S.estado.lotes||[]).map(consolidarLote).filter(function(c){return c.ufc!==null;}); }
+function lotesAnalisaveis(){ return (S.estado.lotes||[]).filter(function(l){return !ehAvulsa(l);}).map(consolidarLote).filter(function(c){return c.ufc!==null;}); }
 
 // ─── CARREGAR / SYNC ───────────────────────────────────────────────
 function carregar(){
@@ -782,6 +787,7 @@ function render(){
   try{
     if(S.view==="mapa") app.innerHTML=viewMapa();
     else if(S.view==="geral") app.innerHTML=viewGeral();
+    else if(S.view==="avulsas") app.innerHTML=viewAvulsas();
     else if(S.view==="cadastros") app.innerHTML=viewCadastros();
     else if(S.view==="visitas") app.innerHTML=viewVisitas();
     else if(S.view==="visita") app.innerHTML=viewVisitaDetalhe();
@@ -801,7 +807,8 @@ function render(){
 function renderTabbar(){
   var tb=el("tabbar"); if(!tb) return;
   var atual=({historico:"mapa",lote:"geral",visita:"visitas"})[S.view]||S.view;
-  var itens=[["mapa","🏭","Início"],["geral","📋","Histórico"],["visitas","👥","Visitas"],["cadastros","📚","Cadastros"],["painel","📊","Painel"],["diag","🩺","Diag."]];
+  if(S.view==="lote"){ try{ if(ehAvulsa(loteAtual())) atual="avulsas"; }catch(_){} }
+  var itens=[["mapa","🏭","Início"],["geral","📋","Histórico"],["avulsas","🧪","Avulsas"],["visitas","👥","Visitas"],["cadastros","📚","Cadastros"],["painel","📊","Painel"],["diag","🩺","Diag."]];
   tb.innerHTML=itens.map(function(it){ return '<button data-nav="'+it[0]+'" class="'+(atual===it[0]?"on":"")+'"><span class="ic">'+it[1]+'</span>'+it[2]+'</button>'; }).join("");
   tb.onclick=function(ev){ var b=ev.target.closest("[data-nav]"); if(b){ S.view=b.dataset.nav; render(); } };
 }
@@ -863,7 +870,7 @@ function viewHistorico(){
 
 // ─── HISTÓRICO & RESULTADOS (todas as unidades, com busca) ─────────
 function viewGeral(){
-  var todos=(S.estado.lotes||[]).slice();
+  var todos=(S.estado.lotes||[]).filter(function(l){ return !ehAvulsa(l); });
   todos.sort(function(a,b){ return String(dataLote(b)).localeCompare(String(dataLote(a))); });
   var comResultado=todos.filter(function(l){ return String(l.resultadoQuantitativo||"").trim(); }).length;
   var termo=(S.busca||"").trim().toLowerCase();
@@ -903,6 +910,51 @@ function viewGeral(){
   return h;
 }
 
+// ─── ANÁLISES AVULSAS (amostras externas, fora da produção) ────────
+function viewAvulsas(){
+  var avs=(S.estado.lotes||[]).filter(ehAvulsa).slice().sort(function(a,b){ return String(dataLote(b)).localeCompare(String(dataLote(a))); });
+  var h='<h1>Análises avulsas</h1>'
+    +'<p class="sub2">Amostras externas (fora da produção da fazenda). Preencha o laudo e envie o PDF.</p>'
+    +'<div class="btn-row"><button class="btn green" data-novavulsa="bacteria">＋ Nova · bactéria</button>'
+    +'<button class="btn green" data-novavulsa="fungo">＋ Nova · fungo</button></div>'
+    +'<div style="height:12px"></div>';
+  if(!avs.length){ h+='<div class="vazio">Nenhuma análise avulsa ainda. Toque em “Nova” para registrar uma amostra externa.</div>'; return h; }
+  h+='<div class="muted" style="font-size:12px;margin-bottom:6px">'+avs.length+' análise(s)</div>';
+  avs.forEach(function(l){
+    var c=STATUS_COR[l.status]||STATUS_COR["Disponível"];
+    var res=resultadoLote(l);
+    h+='<div class="card" style="border-left:5px solid '+c.bd+'" data-abrirlaudo="AVULSA|'+l.id+'">'
+      +'<div class="row" style="margin-bottom:4px"><span class="muted" style="font-family:monospace">'+esc(l.loteNum||l.id)+'</span>'+badge(l.status)+'</div>'
+      +'<div style="font-weight:700;font-size:15px">'+esc(l.cliente||l.identAmostra||l.produto||"(amostra sem identificação)")+'</div>'
+      +'<div class="muted" style="margin-top:3px">'+(l.tipoAnalise==="fungo"?"🍄 Fungo":"🦠 Bactéria")+(l.microrganismo?' · '+esc(l.microrganismo):'')+' · 🗓 '+fmtDate(dataLote(l))+'</div>'
+      +(res?'<div style="margin-top:6px;font-weight:700;color:var(--green)">🔬 '+esc(res)+'</div>':'')
+      +'</div>';
+  });
+  return h;
+}
+function novaAvulsa(tipo){
+  var d=new Date();
+  var loteNum="AV-"+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+"-"+makeId().slice(0,4);
+  var lote={ id:makeId(), fermentador:"AVULSA", loteNum:loteNum, status:"Em Análise", tipoAnalise:(tipo==="fungo"?"fungo":"bacteria"),
+    produto:"",microrganismo:"",loteProduto:"",loteMeio:"",temperatura:"",ph:"",
+    dtInicio:nowDT(),dtFim:"",volumeInicial:"",volumeFinal:"",operador:(S.usuario||""),obs:"",
+    numeroRelatorio:proximoNumeroRelatorio(),dataEmissao:nowDate(),cliente:"",tipoAmostra:"Outro",
+    tipoAmostraOutro:"",meioCultura:"BAC",tipoCompressor:"Radial",dataMultiplicacao:"",dataColeta:nowDate(),
+    responsavelColeta:"",outrasInformacoes:"",
+    dataRecebimento:nowDate(),dataAnalise:nowDate(),tecnicaPlaqueamento:"Spread plate",diluicoesPlaqueadas:"10-3 , 10-4 e 10-5",
+    tempIncubacao:"30±02 °C",tempoIncubacao:"24 a 48 h",choqueTermico:"Sim",coloracaoGram:"Sim",responsavelAnalise:(S.usuario||""),
+    resultadosQualitativos:"",outrosMicrorganismos:"",resultadoQuantitativo:"",
+    identAmostra:"",periodoExec:"",fungoDil:"2",fungoC1:[],fungoC2:[],fungoGerm:"",respFuncao:"",
+    inoculo:"",meio:"",tempoProducaoH:"",volumeFab:"",loteInoculo:"",numeroSacos:"",tipoSubstrato:"",tipoSubstratoOutro:"",
+    criadoPor:(S.usuario||""),criadoEm:new Date().toISOString(),atualizadoEm:"" };
+  overlay(true);
+  api.salvarLote(lote).then(function(salvo){
+    S.estado.lotes.push(salvo||lote);
+    S.aFer="AVULSA"; S.aLoteId=(salvo||lote).id; S.secao="analise"; S.view="lote";
+    overlay(false); render(); toast("Análise avulsa criada. Preencha os dados e o resultado.");
+  }).catch(function(){ overlay(false); toast("Erro ao criar análise","err"); });
+}
+
 // ─── PAINEL & ANÁLISE ──────────────────────────────────────────────
 function viewPainel(){
   var cfg=S.estado.config||[];
@@ -913,7 +965,7 @@ function viewPainel(){
       +'<div class="stat"><b style="color:#4a7c59;font-size:20px">'+cfg.length+'</b><span>Unidades</span></div>'
       +'<div class="stat" style="border-top-color:#c8860a"><b style="color:#c8860a;font-size:20px">'+emProc+'</b><span>Em Processo</span></div>'
       +'<div class="stat" style="border-top-color:#3d6b3d"><b style="color:#3d6b3d;font-size:20px">'+disp+'</b><span>Disponíveis</span></div>'
-      +'<div class="stat" style="border-top-color:#5a7fa8"><b style="color:#5a7fa8;font-size:20px">'+(S.estado.lotes||[]).length+'</b><span>Lotes registrados</span></div>'
+      +'<div class="stat" style="border-top-color:#5a7fa8"><b style="color:#5a7fa8;font-size:20px">'+(S.estado.lotes||[]).filter(function(l){return !ehAvulsa(l);}).length+'</b><span>Lotes registrados</span></div>'
     +'</div>'
     +'<div class="card" style="border-left:5px solid var(--brand)"><div class="row"><div><b>'+(usandoServidor()?"☁️ Sincronizando com a planilha":"📵 Somente neste aparelho")+'</b><div class="muted" style="margin-top:2px">Sincronização, conexão e atualização ficam na aba <b>🩺 Diagnóstico</b>.</div></div><button class="btn sec small" data-nav="diag">Abrir</button></div></div>'
     +'<div class="card" style="border-left:5px solid #c8860a"><div class="sec-title">Backup dos dados (importante)</div>'
@@ -1392,21 +1444,31 @@ function fluxoStepper(l){
   });
   return html+'</div>';
 }
+function secsDoLote(l){
+  return ehAvulsa(l)
+    ? [["analise","🔬 Análise / Laudo"],["fotos","📷 Fotos"]]
+    : [["ficha","📄 Ficha"],["acompanhar","📋 Acompanhamento"],["fotos","📷 Fotos"],["analise","🔬 Análise / Laudo"]];
+}
 function viewLote(){
   var l=loteAtual(); if(!l) return '<div class="vazio">Lote não encontrado.</div>';
-  var SECS=[["ficha","📄 Ficha"],["acompanhar","📋 Acompanhamento"],["fotos","📷 Fotos"],["analise","🔬 Análise / Laudo"]];
+  var avulsa=ehAvulsa(l);
+  var SECS=secsDoLote(l);
+  if(!SECS.some(function(s){return s[0]===S.secao;})) S.secao=SECS[0][0];
   var segs=SECS.map(function(s){return '<button class="seg'+(S.secao===s[0]?" on":"")+'" data-sec="'+s[0]+'">'+s[1]+'</button>';}).join("");
-  var h='<button class="voltar" data-hist="'+S.aFer+'">← '+esc(ehSala(S.aFer)?nomeUnidade(S.aFer):S.aFer)+' — Histórico</button>'
-    +'<div class="row"><h1 style="font-family:monospace;font-size:16px">'+esc(l.loteNum||l.id)+'</h1>'+badge(l.status)+'</div>'
-    +fluxoStepper(l)
-    +(tempoAcabou(l)?'<div class="alerta">⏰ <b>Tempo de produção concluído.</b> Encerre a produção para seguir ao laudo.<br><button class="btn small" id="btnFinalizar">🏁 Finalizar produção</button></div>':'')
-    +(countdownHtml(l)?'<div style="margin:6px 0">'+progressoHtml(l)+countdownHtml(l)+'</div>':'')
+  var voltar = avulsa
+    ? '<button class="voltar" data-nav="avulsas">← Análises avulsas</button>'
+    : '<button class="voltar" data-hist="'+S.aFer+'">← '+esc(ehSala(S.aFer)?nomeUnidade(S.aFer):S.aFer)+' — Histórico</button>';
+  var h=voltar
+    +'<div class="row"><h1 style="font-family:monospace;font-size:16px">'+esc(l.loteNum||l.id)+(avulsa?' <span class="muted" style="font-family:inherit;font-size:12px">· avulsa</span>':'')+'</h1>'+badge(l.status)+'</div>'
+    +(avulsa?'':fluxoStepper(l))
+    +(!avulsa&&tempoAcabou(l)?'<div class="alerta">⏰ <b>Tempo de produção concluído.</b> Encerre a produção para seguir ao laudo.<br><button class="btn small" id="btnFinalizar">🏁 Finalizar produção</button></div>':'')
+    +(!avulsa&&countdownHtml(l)?'<div style="margin:6px 0">'+progressoHtml(l)+countdownHtml(l)+'</div>':'')
     +'<div style="height:8px"></div><div class="segs">'+segs+'</div>';
   if(S.secao==="ficha") h+=secFicha(l);
   else if(S.secao==="acompanhar") h+=secAcompanhamento(l);
   else if(S.secao==="fotos") h+=secFotos(l);
   else if(S.secao==="analise") h+=secAnalise(l);
-  else h+=secFicha(l);
+  else h+=secAnalise(l);
   // Navegação entre abas (deslize com o dedo ou use os botões).
   var idx=SECS.findIndex(function(s){return s[0]===S.secao;});
   h+='<div class="secnav">'
@@ -1417,12 +1479,13 @@ function viewLote(){
   return h;
 }
 // Muda para a aba anterior/seguinte do lote.
-var LOTE_SECS=["ficha","acompanhar","fotos","analise"];
 function passarAba(dir){
-  var i=LOTE_SECS.indexOf(S.secao); if(i<0) return;
+  var l=loteAtual(); if(!l) return;
+  var SECS=secsDoLote(l).map(function(s){return s[0];});
+  var i=SECS.indexOf(S.secao); if(i<0) return;
   var ni=i+(dir==="next"?1:-1);
-  if(ni<0||ni>=LOTE_SECS.length) return;
-  S.secao=LOTE_SECS[ni]; render();
+  if(ni<0||ni>=SECS.length) return;
+  S.secao=SECS[ni]; render();
 }
 
 // ── Parâmetros: leitura rápida de pH/temperatura (botões − / ＋) ──
@@ -1547,12 +1610,16 @@ function secLaudo(l){
         : '<p class="muted" style="margin:0 0 8px">Gera o laudo formatado e abre a impressão do navegador — escolha <b>Salvar como PDF</b> (funciona no celular).<br><span style="color:#8a5c00">Para salvar direto no Drive e anexar no WhatsApp, ligue a sincronização com a planilha (📊 Painel).</span></p>'
           +'<button class="btn green" id="btnImprimir">🖨️ Imprimir / Salvar PDF</button>')
     +'</div>'
-    +(l.status==="Concluído"
-        ? '<div class="card" style="border-left:5px solid #3d6b3d"><div class="sec-title">Lote concluído</div><p class="muted" style="margin:0">✅ '+esc(rotuloUnidade(l.fermentador)+' '+nomeUnidade(l.fermentador))+' liberado (Disponível).</p></div>'
-        : '<button class="btn green" id="btnConcluir">✅ Concluir lote (libera o fermentador)</button>');
+    +(ehAvulsa(l)
+        ? (l.status==="Concluído"
+            ? '<div class="card" style="border-left:5px solid #3d6b3d"><div class="sec-title">Análise concluída</div><p class="muted" style="margin:0">✅ Registrada no histórico de avulsas.</p></div>'
+            : '<button class="btn green" id="btnConcluir">✅ Concluir análise</button>')
+        : (l.status==="Concluído"
+            ? '<div class="card" style="border-left:5px solid #3d6b3d"><div class="sec-title">Lote concluído</div><p class="muted" style="margin:0">✅ '+esc(rotuloUnidade(l.fermentador)+' '+nomeUnidade(l.fermentador))+' liberado (Disponível).</p></div>'
+            : '<button class="btn green" id="btnConcluir">✅ Concluir lote (libera o fermentador)</button>'));
 }
 function montarLaudo(l){
-  if(ehSala(l.fermentador)) return montarLaudoFungo(l);
+  if(ehFungo(l)) return montarLaudoFungo(l);
   var f=ferConfig(l.fermentador); var L=[];
   L.push("*"+LAUDO_TITULO+"*");
   if(LAUDO_ENDERECO) L.push(LAUDO_ENDERECO);
@@ -1570,7 +1637,8 @@ function montarLaudo(l){
   L.push("Lote do produto: "+(l.loteProduto||l.loteNum||"—"));
   L.push("Lote meio de cultura: "+(l.loteMeio||"—"));
   L.push("Temperatura: "+(l.temperatura||"N/A")+"    pH: "+(l.ph||"N/A"));
-  L.push(rotuloUnidade(l.fermentador)+": "+nomeUnidade(l.fermentador)+" ("+capUnidade(f)+")");
+  if(ehAvulsa(l)){ if(l.identAmostra) L.push("Identificação da amostra: "+l.identAmostra); }
+  else L.push(rotuloUnidade(l.fermentador)+": "+nomeUnidade(l.fermentador)+" ("+capUnidade(f)+")");
   if(ehSala(l.fermentador)){
     if(substratoTxt(l)) L.push("Tipo de substrato: "+substratoTxt(l));
     if(l.volumeFab) L.push("Quantidade de substrato: "+l.volumeFab+" kg");
@@ -1686,7 +1754,7 @@ function montarLaudoFungo(l){
   L.push("*"+LAUDO_FUNGO_TITULO+"*");
   L.push("");
   L.push("Contratante: "+(l.cliente||CLIENTE_PADRAO));
-  L.push("Local da Produção: "+CLIENTE_PADRAO+" · "+nomeUnidade(l.fermentador));
+  L.push(ehAvulsa(l) ? ("Amostra: "+(l.identAmostra||l.loteNum||"—")) : ("Local da Produção: "+CLIENTE_PADRAO+" · "+nomeUnidade(l.fermentador)));
   L.push("Período de execução: "+(l.periodoExec||"—"));
   L.push("Microrganismo: "+(l.microrganismo||"—"));
   L.push("Substrato: "+(substratoTxt(l)||"—")+"    Ident.: "+(l.identAmostra||"—"));
@@ -1825,14 +1893,20 @@ function secAcompanhamento(l){
 }
 // Aba Análise / Laudo (após o processo): dados da análise, resultado e conclusão.
 function secAnalise(l){
-  var sala=ehSala(l.fermentador);
+  var fungo=ehFungo(l);
+  if(ehAvulsa(l)){
+    var banA = l.status==="Concluído"
+      ? '<div class="alerta" style="background:#eef7f0;border-color:#bfe0c9;border-left-color:#3d6b3d;color:#2d5c3a">✅ <b>Análise concluída.</b> Gere/envie o PDF do laudo abaixo.</div>'
+      : '<div class="alerta">🧪 <b>Análise avulsa (externa).</b> Preencha os dados da amostra e o resultado; depois gere o PDF e, se quiser, marque como concluída.</div>';
+    return banA+(fungo?secRelatorioFungo(l):secRelatorio(l))+secLaudo(l);
+  }
   var unid=rotuloUnidade(l.fermentador);
-  var resLabel=sala?"resultado (conídios/mL)":"resultado (UFC/mL)";
+  var resLabel=fungo?"resultado (conídios/mL)":"resultado (UFC/mL)";
   var banner='';
   if(l.status==="Aguardando Análise") banner='<div class="alerta">⏳ <b>Aguardando análise.</b> Preencha os dados e, quando sair do laboratório, o <b>'+resLabel+'</b>. Depois toque em <b>Concluir</b>.</div>';
   else if(l.status==="Em Análise") banner='<div class="alerta" style="background:#f1ecf8;border-color:#c9b8e0;border-left-color:#7a5aa8;color:#4a2a70">🔬 <b>Em análise.</b> Ao <b>Concluir</b>, o resultado vai para o histórico e o '+esc(unid.toLowerCase())+' é liberado.</div>';
   else if(["Concluído"].indexOf(l.status)<0) banner='<div class="alerta">Finalize a produção na aba <b>Acompanhamento</b> para liberar a análise.</div>';
-  return banner+(sala?secRelatorioFungo(l):secRelatorio(l))+secLaudo(l);
+  return banner+(fungo?secRelatorioFungo(l):secRelatorio(l))+secLaudo(l);
 }
 
 // ─── AÇÕES: LOTE / FLUXO ───────────────────────────────────────────
@@ -1922,19 +1996,21 @@ function finalizarProducao(){
 }
 function excluirLote(){
   var l=loteAtual(); if(!l) return;
-  if(!confirm("Excluir este lote e seus registros? Esta ação não pode ser desfeita.")) return;
+  var avulsa=ehAvulsa(l);
+  if(!confirm(avulsa?"Excluir esta análise avulsa? Esta ação não pode ser desfeita.":"Excluir este lote e seus registros? Esta ação não pode ser desfeita.")) return;
   overlay(true);
   api.excluirLote(l.id).then(function(){
     S.estado.lotes=S.estado.lotes.filter(function(x){return x.id!==l.id;});
-    S.estado.fermentadores[l.fermentador]="Disponível"; api.setFermentadorStatus(l.fermentador,"Disponível");
-    S.view="historico"; overlay(false); render(); toast("Lote excluído.");
+    if(avulsa){ S.view="avulsas"; }
+    else { S.estado.fermentadores[l.fermentador]="Disponível"; api.setFermentadorStatus(l.fermentador,"Disponível"); S.view="historico"; }
+    overlay(false); render(); toast(avulsa?"Análise excluída.":"Lote excluído.");
   }).catch(function(){ overlay(false); toast("Erro","err"); });
 }
 function persistLote(l,msg){
   overlay(true);
   api.salvarLote(l).then(function(salvo){
     Object.assign(l,salvo||{});
-    if(l.status){ var fs=ferStatusDeLote(l.status);
+    if(l.status && !ehAvulsa(l)){ var fs=ferStatusDeLote(l.status);
       if(S.estado.fermentadores[l.fermentador]!==fs){ S.estado.fermentadores[l.fermentador]=fs; api.setFermentadorStatus(l.fermentador,fs); } }
     overlay(false); render(); toast(msg||"Salvo.");
   }).catch(function(){ overlay(false); toast("Erro ao salvar","err"); });
@@ -2043,6 +2119,11 @@ function salvarRelatorio(){
 // ── Laudo: concluir libera o fermentador (Concluído → Disponível) ──
 function concluirLote(){
   var l=loteAtual(); if(!l) return;
+  if(ehAvulsa(l)){
+    if(!confirm("Concluir esta análise avulsa? Ela fica registrada no histórico de avulsas.")) return;
+    l.status="Concluído"; if(!l.dtFim) l.dtFim=nowDT();
+    persistLote(l,"Análise concluída."); return;
+  }
   if(!confirm("Concluir este lote? "+rotuloUnidade(l.fermentador)+" "+nomeUnidade(l.fermentador)+" volta a ficar Disponível.")) return;
   l.status="Concluído"; if(!l.dtFim) l.dtFim=nowDT();
   persistLote(l,"Lote concluído. Fermentador liberado.");
@@ -2259,7 +2340,7 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-histf],[data-novo],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-histf],[data-novo],[data-novavulsa],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -2267,6 +2348,7 @@ function bind(){
     if(t.dataset.hist){ S.aFer=t.dataset.hist; S.view="historico"; render(); return; }
     if(t.dataset.histf){ S.histFiltro=t.dataset.histf; render(); return; }
     if(t.dataset.novo){ novoLote(t.dataset.novo); return; }
+    if(t.dataset.novavulsa){ novaAvulsa(t.dataset.novavulsa); return; }
     if(t.dataset.abrir){ var p=t.dataset.abrir.split("|"); S.aFer=p[0]; S.aLoteId=p[1]; S.secao="ficha"; S.view="lote"; render(); return; }
     if(t.dataset.abrirlaudo){ var pl=t.dataset.abrirlaudo.split("|"); S.aFer=pl[0]; S.aLoteId=pl[1]; S.secao="analise"; S.view="lote"; render(); return; }
     if(t.dataset.abrirvisita){ S.aVisitaId=t.dataset.abrirvisita; S.view="visita"; render(); return; }
