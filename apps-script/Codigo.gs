@@ -96,7 +96,8 @@ const COLS = {
 const OPC_TIPO_AMOSTRA = ['Água', 'Inóculo', 'Meio de cultura', 'Multiplicado', 'Outro'];
 const OPC_MEIO_CULTURA = ['BAC', 'SM', 'BUG', 'CATP', 'FINISH', 'WHITE', 'Não se aplica'];
 const OPC_COMPRESSOR = ['Odontológico/Parafuso', 'Radial', 'Venturi'];
-const LAUDO_TITULO = 'RELATÓRIO DE ANÁLISE MICROBIOLÓGICA ON FARM';
+const LAUDO_TITULO = 'RELATÓRIO DE ANÁLISE MICROBIOLÓGICA ON FARM – SOLUBIO';
+const LAUDO_RODAPE = 'Rodovia GO 184, km 09 – Zona Rural, Jataí – GO, CEP 75.809-899. Contato: (64) 99975-9910';
 const LAUDO_CONSIDERACOES = [
   'A coloração de Gram foi realizada utilizando uma alíquota da amostra líquida.',
   'A amostra será retida para contraprova por 7 dias, contados a partir da emissão do relatório.',
@@ -549,110 +550,89 @@ function linhaKV_(k, v) {
 }
 
 function laudoHtml_(l, fotos) {
-  var f = FERMENTADORES.filter(function (x) { return x.id === l.fermentador; })[0] || { volume: '' };
+  fotos = fotos || [];
   var conc = l.resultadoQuantitativo || '';
   if (conc && !/ufc/i.test(conc)) conc = conc + ' UFC/mL';
+  var quali = (l.resultadosQualitativos || '').toUpperCase();
+  var outros = (l.outrosMicrorganismos || '').toUpperCase();
 
-  fotos = fotos || [];
   function dataImg_(ft) {
     try {
       var b = DriveApp.getFileById(ft.fileId).getBlob();
       return 'data:' + b.getContentType() + ';base64,' + Utilities.base64Encode(b.getBytes());
     } catch (e) { return ''; }
   }
-  function grupoFotos_(titulo, filtro, nota) {
-    var sel = fotos.filter(filtro);
-    if (!sel.length) return '';
-    var itens = sel.map(function (ft) {
-      var img = dataImg_(ft);
-      return '<div class="foto">' + (img ? '<img src="' + img + '">' : '<div class="semimg">(imagem indisponível)</div>') +
-        '<div class="cap">' + esc_(ft.categoria || 'Foto') + '</div></div>';
-    }).join('');
-    return '<div class="secao3">' + esc_(titulo) + '</div><div class="fotos">' + itens + '</div>' +
-      (nota ? '<div class="notaobs">' + esc_(nota) + '</div>' : '');
-  }
-  var anexos = '';
-  if (fotos.length) {
-    var usadas_ = /placa|microscopia|gram|outros|sem choque/i;
-    anexos = '<div class="secao2">Anexos — Fotos da análise</div>' +
-      grupoFotos_('Fotos da análise com choque térmico', function (ft) { return /placa/i.test(ft.categoria || ''); }, LAUDO_OBS_CHOQUE) +
-      grupoFotos_('Microscopia (100x) e outros microrganismos', function (ft) { return /microscopia|gram|outros|sem choque/i.test(ft.categoria || ''); }, '') +
-      grupoFotos_('Outras fotos', function (ft) { return !usadas_.test(ft.categoria || ''); }, '');
-  }
+  function cel_(label, value) { return '<b>' + esc_(label) + ':</b> ' + (value == null || value === '' ? '—' : value); }
+  // TIPO DE AMOSTRA com "Outro: <texto>"
+  var tipoAm = OPC_TIPO_AMOSTRA.map(function (o) {
+    if (o === 'Outro') return (l.tipoAmostra === 'Outro' ? '&#9746;' : '&#9744;') + ' Outro: ' + (l.tipoAmostra === 'Outro' && l.tipoAmostraOutro ? esc_(l.tipoAmostraOutro) : '');
+    return (l.tipoAmostra === o ? '&#9746;' : '&#9744;') + ' ' + esc_(o);
+  }).join('&nbsp;&nbsp; ');
+  var choque = (l.choqueTermico === 'Sim' ? '&#9746;' : '&#9744;') + ' SIM&nbsp;&nbsp; ' + (l.choqueTermico === 'Sim' ? '&#9744;' : '&#9746;') + ' NÃO';
 
-  var considera = LAUDO_CONSIDERACOES.map(function (c) { return '<li>' + esc_(c) + '</li>'; }).join('');
-  var notas = LAUDO_NOTAS.map(function (n) { return '<div>' + esc_(n) + '</div>'; }).join('');
+  var fotosHtml = '';
+  if (fotos.length) {
+    fotosHtml = '<div class="fotos"><div class="flabel">FOTOS ANÁLISE:</div>' +
+      fotos.map(function (ft) {
+        var img = dataImg_(ft);
+        return '<div class="foto">' + (img ? '<img src="' + img + '">' : '<div class="semimg">(imagem indisponível)</div>') +
+          '<div class="cap">' + esc_(ft.categoria || 'Microscopia') + '</div></div>';
+      }).join('') + '</div>';
+  }
 
   return '' +
     '<html><head><meta charset="utf-8"><style>' +
-    'body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#222;margin:26px;}' +
-    'h1{font-size:15px;text-align:center;margin:0 0 2px;}' +
-    '.sub{text-align:center;font-size:10px;color:#555;margin:0 0 10px;}' +
-    'table{width:100%;border-collapse:collapse;margin:6px 0;}' +
-    'td{border:1px solid #999;padding:5px 7px;vertical-align:top;}' +
-    '.secao td{background:#e9e2d0;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;text-align:center;}' +
-    '.secao2{background:#e9e2d0;font-weight:bold;text-transform:uppercase;padding:5px 7px;border:1px solid #999;margin-top:10px;text-align:center;}' +
-    '.k{width:40%;font-weight:bold;background:#f6f2e8;}' +
-    '.th td{font-weight:bold;background:#f6f2e8;}' +
-    '.consid{font-size:10px;margin:4px 0;padding-left:16px;}' +
-    '.fotos{display:flex;flex-wrap:wrap;margin-top:6px;}' +
-    '.foto{width:47%;margin:1.5%;text-align:center;}' +
-    '.foto img{max-width:100%;max-height:230px;border:1px solid #ccc;}' +
-    '.foto .cap{font-size:9px;color:#555;margin-top:3px;}' +
+    'body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#1a1a1a;margin:18px;}' +
+    '.banner{background:#2fa23f;color:#fff;padding:12px 16px;}' +
+    '.banner .bq{font-weight:800;font-size:23px;letter-spacing:1px;}' +
+    '.banner .bo{font-weight:800;font-size:11px;color:#ffd21f;border:2px solid #ffd21f;border-radius:5px;padding:1px 7px;margin-left:10px;}' +
+    '.title{text-align:center;font-weight:bold;font-size:13px;margin:12px 0 4px;}' +
+    'table{width:100%;border-collapse:collapse;font-size:10.5px;table-layout:fixed;}' +
+    'td{border:1px solid #555;padding:4px 7px;vertical-align:top;word-wrap:break-word;}' +
+    '.sec{background:#8dc63f;color:#fff;font-weight:bold;text-align:center;text-transform:uppercase;letter-spacing:.4px;}' +
+    '.rk{width:52%;text-align:center;font-weight:bold;}' +
+    '.rv{text-align:center;font-weight:bold;font-size:12px;}' +
+    '.ital{font-style:italic;}' +
+    '.right{text-align:right;}' +
+    '.fotos{margin-top:10px;}' +
+    '.flabel{font-size:11px;margin:0 0 6px;}' +
+    '.foto{display:inline-block;width:46%;margin:0 1.5% 6px;text-align:center;vertical-align:top;}' +
+    '.foto img{width:100%;max-height:240px;border:1px solid #bbb;}' +
+    '.foto .cap{font-size:10px;margin-top:2px;}' +
     '.semimg{font-size:9px;color:#999;padding:20px;border:1px dashed #ccc;}' +
-    '.secao3{font-weight:bold;font-size:10px;text-transform:uppercase;color:#5a4030;margin:8px 0 2px;}' +
-    '.notaobs{font-size:9px;color:#555;font-style:italic;margin:2px 0 6px;}' +
-    '.ufcnote{font-size:9px;color:#555;margin:2px 0 6px;}' +
-    '.notas{font-size:8.5px;color:#555;margin-top:12px;border-top:1px solid #ccc;padding-top:6px;line-height:1.4;}' +
-    '.notas > div{margin-bottom:3px;}' +
-    '.rodape{margin-top:12px;font-size:10px;color:#555;}' +
+    '.pag{text-align:right;font-size:9.5px;color:#333;margin-top:10px;}' +
+    '.foot{text-align:center;font-size:9.5px;color:#333;margin-top:4px;}' +
     '</style></head><body>' +
-    '<h1>' + esc_(LAUDO_TITULO) + '</h1>' +
-    '<div class="sub">Fazenda Água Viva · BioFábrica</div>' +
-    '<table><tr><td class="k">Nº do Relatório</td><td>' + esc_(l.numeroRelatorio || '—') +
-      '</td><td class="k">Data da emissão</td><td>' + fmtDataPt_(l.dataEmissao) + '</td></tr></table>' +
+    '<div class="banner"><span class="bq">QUALIDADE</span><span class="bo">ON FARM</span></div>' +
+    '<div class="title">' + esc_(LAUDO_TITULO) + '</div>' +
     '<table>' +
-      '<tr class="secao"><td colspan="2">Dados da amostra</td></tr>' +
-      linhaKV_('Cliente / Fazenda', l.cliente || 'Fazenda Água Viva') +
-      '<tr><td class="k">Tipo de amostra</td><td class="chk">' + chk_(OPC_TIPO_AMOSTRA, l.tipoAmostra) +
-        (l.tipoAmostra === 'Outro' && l.tipoAmostraOutro ? ' (' + esc_(l.tipoAmostraOutro) + ')' : '') + '</td></tr>' +
-      '<tr><td class="k">Meio de cultura</td><td class="chk">' + chk_(OPC_MEIO_CULTURA, l.meioCultura) + '</td></tr>' +
-      '<tr><td class="k">Tipo de compressor</td><td class="chk">' + chk_(OPC_COMPRESSOR, l.tipoCompressor) + '</td></tr>' +
-      linhaKV_('Nome do produto', l.produto) +
-      linhaKV_('Microrganismo', l.microrganismo) +
-      linhaKV_('Lote do produto', l.loteProduto) +
-      linhaKV_('Lote meio de cultura', l.loteMeio) +
-      linhaKV_('Temperatura', l.temperatura || 'N/A') +
-      linhaKV_('pH', l.ph || 'N/A') +
-      linhaKV_('Fermentador', l.fermentador + ' (' + f.volume + ' L)') +
-      linhaKV_('Data da multiplicação', fmtDataPt_(l.dataMultiplicacao)) +
-      linhaKV_('Data da coleta', fmtDataPt_(l.dataColeta)) +
-      linhaKV_('Responsável pela coleta', l.responsavelColeta) +
-      linhaKV_('Outras informações', l.outrasInformacoes) +
+      '<tr><td>' + cel_('Nº DE RELATÓRIO', esc_(l.numeroRelatorio || '—')) + '</td><td class="right">' + cel_('DATA DA EMISSÃO', fmtDataPt_(l.dataEmissao)) + '</td></tr>' +
+      '<tr><td class="sec" colspan="2">Dados da amostra</td></tr>' +
+      '<tr><td colspan="2">' + cel_('CLIENTE/FAZENDA', esc_(l.cliente || 'Fazenda Água Viva')) + '</td></tr>' +
+      '<tr><td colspan="2">' + cel_('TIPO DE AMOSTRA', tipoAm) + '</td></tr>' +
+      '<tr><td colspan="2">' + cel_('MEIO DE CULTURA', chk_(OPC_MEIO_CULTURA, l.meioCultura)) + '</td></tr>' +
+      '<tr><td colspan="2">' + cel_('TIPO DE COMPRESSOR', chk_(OPC_COMPRESSOR, l.tipoCompressor)) + '</td></tr>' +
+      '<tr><td>' + cel_('NOME DO PRODUTO', esc_(l.produto)) + '</td><td>' + cel_('MICRORGANISMO', '<span class="ital">' + esc_(l.microrganismo || '—') + '</span>') + '</td></tr>' +
+      '<tr><td>' + cel_('LOTE DO PRODUTO', esc_(l.loteProduto || l.loteNum)) + '</td><td>' + cel_('LOTE MEIO DE CULTURA', esc_(l.loteMeio)) + '</td></tr>' +
+      '<tr><td>' + cel_('TEMPERATURA', esc_(l.temperatura || 'N/A')) + '</td><td>' + cel_('pH', esc_(l.ph || 'N/A')) + '</td></tr>' +
+      '<tr><td>' + cel_('DATA DA MULTIPLICAÇÃO', fmtDataPt_(l.dataMultiplicacao)) + '</td><td>' + cel_('DATA DA COLETA', fmtDataPt_(l.dataColeta)) + '</td></tr>' +
+      '<tr><td colspan="2">' + cel_('RESPONSÁVEL PELA COLETA', esc_(l.responsavelColeta)) + '</td></tr>' +
+      '<tr><td colspan="2">' + cel_('OUTRAS INFORMAÇÕES', esc_(l.outrasInformacoes)) + '</td></tr>' +
+      '<tr><td class="sec" colspan="2">Dados da análise</td></tr>' +
+      '<tr><td>' + cel_('DATA RECEBIMENTO DA AMOSTRA', fmtDataPt_(l.dataRecebimento)) + '</td><td>' + cel_('DATA DA ANÁLISE', fmtDataPt_(l.dataAnalise)) + '</td></tr>' +
+      '<tr><td>' + cel_('TÉCNICA DE PLAQUEAMENTO', esc_(l.tecnicaPlaqueamento || 'NA')) + '</td><td>' + cel_('DILUIÇÕES PLAQUEADAS', esc_(l.diluicoesPlaqueadas || 'NA')) + '</td></tr>' +
+      '<tr><td>' + cel_('TEMPERATURA DE INCUBAÇÃO', esc_(l.tempIncubacao || 'NA')) + '</td><td>' + cel_('TEMPO DE INCUBAÇÃO', esc_(l.tempoIncubacao || 'NA')) + '</td></tr>' +
+      '<tr><td colspan="2">' + cel_('CHOQUE TÉRMICO', choque) + '</td></tr>' +
+      '<tr><td colspan="2">' + cel_('COLORAÇÃO DE GRAM', esc_(l.coloracaoGram || '—')) + '</td></tr>' +
+      '<tr><td colspan="2">' + cel_('RESPONSÁVEL', esc_(l.responsavelAnalise)) + '</td></tr>' +
+      '<tr><td class="sec" colspan="2">Resultados</td></tr>' +
+      '<tr><td class="rk">RESULTADOS QUALITATIVOS:</td><td class="rv">' + esc_(quali || '—') + '</td></tr>' +
+      (conc ? '<tr><td class="rk">CONTAGEM (com choque térmico):</td><td class="rv">' + esc_(conc) + '</td></tr>' : '') +
+      '<tr><td class="rk">OUTROS MICRORGANISMOS:</td><td class="rv">' + esc_(outros || '—') + '</td></tr>' +
     '</table>' +
-    '<table>' +
-      '<tr class="secao"><td colspan="2">Dados da análise</td></tr>' +
-      linhaKV_('Data de recebimento da amostra', fmtDataPt_(l.dataRecebimento)) +
-      linhaKV_('Data da análise', fmtDataPt_(l.dataAnalise)) +
-      linhaKV_('Técnica de plaqueamento', l.tecnicaPlaqueamento || 'Spread plate') +
-      linhaKV_('Diluições plaqueadas', l.diluicoesPlaqueadas || '10-3 , 10-4 e 10-5') +
-      linhaKV_('Temperatura de incubação', l.tempIncubacao || '30±02 °C') +
-      linhaKV_('Tempo de incubação', l.tempoIncubacao || '24 a 48 h') +
-      linhaKV_('Choque térmico', l.choqueTermico) +
-      linhaKV_('Coloração de Gram', l.coloracaoGram) +
-      linhaKV_('Responsável', l.responsavelAnalise) +
-    '</table>' +
-    '<table>' +
-      '<tr class="secao"><td colspan="2">Resultados</td></tr>' +
-      '<tr class="th"><td>Descrição</td><td>Concentração (UFC/mL)</td></tr>' +
-      '<tr><td>Microrganismo de interesse (com choque térmico)</td><td>' + (conc || '—') + '</td></tr>' +
-      '<tr><td>Presença de outros microrganismos</td><td>' + esc_(l.outrosMicrorganismos || '—') + '</td></tr>' +
-    '</table>' +
-    '<div class="ufcnote">UFC: Unidades Formadoras de Colônias.</div>' +
-    '<div class="secao2">Considerações</div><ul class="consid">' + considera + '</ul>' +
-    anexos +
-    '<div class="notas">' + notas + '</div>' +
-    '<div class="rodape">Emitido em ' + fmtDataPt_(nowIso_()) + '</div>' +
+    fotosHtml +
+    '<div class="pag">Página <b>1</b> de <b>1</b></div>' +
+    (LAUDO_RODAPE ? '<div class="foot">' + esc_(LAUDO_RODAPE) + '</div>' : '') +
     '</body></html>';
 }
 
