@@ -99,7 +99,7 @@ const OPC_TIPO_AMOSTRA = ['Água', 'Inóculo', 'Meio de cultura', 'Multiplicado'
 const OPC_MEIO_CULTURA = ['BAC', 'SM', 'BUG', 'CATP', 'FINISH', 'WHITE', 'Não se aplica'];
 const OPC_COMPRESSOR = ['Odontológico/Parafuso', 'Radial', 'Venturi'];
 const LAUDO_TITULO = 'RELATÓRIO DE ANÁLISE MICROBIOLÓGICA ON FARM – SOLUBIO';
-const LAUDO_RODAPE = 'Rodovia GO 184, km 09 – Zona Rural, Jataí – GO, CEP 75.809-899. Contato: (64) 99975-9910';
+const LAUDO_RODAPE = ''; // endereço removido do rodapé (vazio = não mostra)
 const LAUDO_FUNGO_TITULO = 'RESULTADO MICROBIOLÓGICO — FUNGO';
 const FATOR_NEUBAUER = 25 * 1e4; // 25 quadrados médios × 10⁴ (câmara de Neubauer)
 const LAUDO_CONSIDERACOES = [
