@@ -31,6 +31,8 @@ const TAB = {
   ACOES:   'Acoes',
   MED:     'Medicoes',
   USERS:   'Usuarios',
+  ESTQ:    'Estoque',
+  MOVEST:  'MovEstoque',
 };
 
 const FERMENTADORES = [
@@ -92,6 +94,9 @@ const COLS = {
   // Usuários do app (controle de acesso). A senha nunca é guardada em texto:
   // guardamos só o "hash" (SHA-256) + um "sal" aleatório. perfil: admin | operador.
   [TAB.USERS]: ['id', 'nome', 'senhaHash', 'salt', 'perfil', 'ativo', 'criadoEm'],
+  // Estoque de insumos: itens (metadados) e movimentos (kardex; saldo = soma dos efeitos).
+  [TAB.ESTQ]: ['id', 'nome', 'tipo', 'unidade', 'minimo', 'ativo', 'criadoEm'],
+  [TAB.MOVEST]: ['id', 'itemNome', 'tipo', 'qtd', 'unidade', 'origem', 'loteId', 'papel', 'dt', 'usuario'],
 };
 
 // Opções (espelham o Index.html) para desenhar os "checkboxes" no PDF.
@@ -147,6 +152,11 @@ function apiHandlers_() {
     excluirFuncionario: excluirFuncionario,
     salvarUsuario: salvarUsuario,
     excluirUsuario: excluirUsuario,
+    salvarEstoqueItem: salvarEstoqueItem,
+    excluirEstoqueItem: excluirEstoqueItem,
+    addMovEstoque: addMovEstoque,
+    excluirMovEstoque: excluirMovEstoque,
+    excluirMovsDoLote: excluirMovsDoLote,
     addMedicao: addMedicao,
     excluirMedicao: excluirMedicao,
     addAjuste: addAjuste,
@@ -375,6 +385,8 @@ function getEstado() {
     medicoes: readAll_(TAB.MED),
     fotos: readAll_(TAB.FOTOS),
     usuarios: readAll_(TAB.USERS).filter(ativo_),
+    estoqueItens: readAll_(TAB.ESTQ).filter(ativo_),
+    estoqueMovs: readAll_(TAB.MOVEST),
     usuario: usuario_(),
     serverTime: nowIso_(),
   };
@@ -449,6 +461,43 @@ function excluirUsuario(id) {
     var sh = sheet_(TAB.USERS);
     var row = findRow_(sh, id);
     if (row !== -1) sh.deleteRow(row);
+    return true;
+  });
+}
+
+// Estoque: itens (metadados) e movimentos (kardex). Gravam/atualizam pelo id.
+function salvarEstoqueItem(it) {
+  return withLock_(function () {
+    var obj = { id: it.id, nome: it.nome, tipo: it.tipo === 'beneficiado' ? 'beneficiado' : 'insumo',
+      unidade: it.unidade || '', minimo: it.minimo || '', ativo: true, criadoEm: it.criadoEm || nowIso_() };
+    var sh = sheet_(TAB.ESTQ);
+    var row = findRow_(sh, it.id);
+    if (row === -1) sh.appendRow(rowFromObj_(TAB.ESTQ, obj));
+    else sh.getRange(row, 1, 1, COLS[TAB.ESTQ].length).setValues([rowFromObj_(TAB.ESTQ, obj)]);
+    return obj;
+  });
+}
+function excluirEstoqueItem(id) {
+  return withLock_(function () { var sh = sheet_(TAB.ESTQ); var row = findRow_(sh, id); if (row !== -1) sh.deleteRow(row); return true; });
+}
+function addMovEstoque(m) {
+  return withLock_(function () {
+    var obj = { id: m.id, itemNome: m.itemNome || '', tipo: m.tipo || 'entrada', qtd: m.qtd, unidade: m.unidade || '',
+      origem: m.origem || '', loteId: m.loteId || '', papel: m.papel || '', dt: m.dt || nowIso_(), usuario: m.usuario || '' };
+    sheet_(TAB.MOVEST).appendRow(rowFromObj_(TAB.MOVEST, obj));
+    return obj;
+  });
+}
+function excluirMovEstoque(id) {
+  return withLock_(function () { var sh = sheet_(TAB.MOVEST); var row = findRow_(sh, id); if (row !== -1) sh.deleteRow(row); return true; });
+}
+// Remove todos os movimentos de um lote (estorno ao excluir o lote).
+function excluirMovsDoLote(loteId) {
+  return withLock_(function () {
+    var sh = sheet_(TAB.MOVEST); var last = sh.getLastRow(); if (last < 2) return true;
+    var idx = COLS[TAB.MOVEST].indexOf('loteId');
+    var vals = sh.getRange(2, 1, last - 1, COLS[TAB.MOVEST].length).getValues();
+    for (var i = vals.length - 1; i >= 0; i--) { if (String(vals[i][idx]) === String(loteId)) sh.deleteRow(i + 2); }
     return true;
   });
 }
