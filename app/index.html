@@ -298,16 +298,20 @@ function usandoServidor(){ return USANDO_GOOGLE || usandoHttp(); }
 // Chamada HTTP ao Apps Script (GitHub Pages). text/plain evita o preflight CORS.
 function hcall(name){
   var args=[].slice.call(arguments,1);
-  return fetch(scriptUrl(), {
+  var ctrl=(typeof AbortController!=="undefined")?new AbortController():null;
+  var tid=ctrl?setTimeout(function(){ try{ctrl.abort();}catch(_){}} ,20000):null;
+  var p=fetch(scriptUrl(), {
     method:"POST", redirect:"follow",
     headers:{"Content-Type":"text/plain;charset=utf-8"},
-    body: JSON.stringify({ fn:name, args:args })
+    body: JSON.stringify({ fn:name, args:args }),
+    signal: ctrl?ctrl.signal:undefined
   }).then(function(r){ return r.json(); }).then(function(j){
     if(j && j.ok) return j.data;
     // Rejeição do SERVIDOR (ex.: função ainda não publicada no /exec). Marcamos
     // para a fila offline saber que é um erro do item, não da rede.
-    var e=new Error((j && j.error) || "Erro no servidor"); e.appsError=true; throw e;
+    var e=new Error((j && j.error) || "Resposta inesperada do servidor"); e.appsError=true; throw e;
   });
+  return p.then(function(v){ if(tid)clearTimeout(tid); return v; }, function(err){ if(tid)clearTimeout(tid); throw err; });
 }
 // Chamada unificada: Apps Script embutido (google.script.run) ou HTTP.
 function servercall(name){
@@ -739,8 +743,8 @@ function lotesAnalisaveis(){ return (S.estado.lotes||[]).filter(function(l){retu
 // ─── CARREGAR / SYNC ───────────────────────────────────────────────
 function carregar(){
   overlay(true);
-  return api.getEstado().then(function(e){ aplicarEstado(e); _ultimoSync=nowDT(); overlay(false); render(); })
-    .catch(function(err){ overlay(false); toast("Erro ao carregar: "+(err&&err.message||err),"err"); render(); });
+  return api.getEstado().then(function(e){ S.erroCarregar=null; aplicarEstado(e); _ultimoSync=nowDT(); overlay(false); render(); })
+    .catch(function(err){ S.erroCarregar=(err&&err.message)||String(err); overlay(false); toast("Erro ao carregar: "+(err&&err.message||err),"err"); render(); });
 }
 // Só o MAPA se atualiza sozinho (não tem campos de digitação). Telas com formulário
 // (cadastros, painel, visitas, diagnóstico) NÃO recarregam sozinhas — senão apagam o
@@ -834,10 +838,19 @@ function atualizarBotaoSair(){
 function render(){
   var app=el("app");
   if(!S.estado){
+    if(S.erroCarregar && usandoHttp()){
+      app.innerHTML='<div class="card" style="text-align:center;padding:26px 18px"><div style="font-size:40px">⚠️</div>'
+        +'<h3 style="margin:10px 0 6px">Não consegui carregar da planilha</h3>'
+        +'<p class="muted" style="margin:0 0 14px">O link de sincronização pode estar errado. Volte a usar <b>só este aparelho</b> (seus dados locais continuam aqui) e corrija o link depois na aba Diagnóstico.</p>'
+        +'<div class="btn-row" style="justify-content:center"><button class="btn green" data-usarlocal>📵 Usar só este aparelho</button>'
+        +'<button class="btn sec" data-recarregar>⟳ Tentar de novo</button></div>'
+        +'<p class="muted" style="font-size:11px;margin:12px 0 0">'+esc(String(S.erroCarregar).slice(0,140))+'</p></div>';
+      bind(); renderTabbar(); return;
+    }
     app.innerHTML='<div class="card" style="text-align:center;padding:28px 18px"><div style="font-size:40px">🌿</div>'
       +'<h3 style="margin:10px 0 6px">Carregando…</h3>'
       +'<button class="btn" data-recarregar style="margin-top:8px">⟳ Recarregar</button></div>';
-    renderTabbar(); return;
+    bind(); renderTabbar(); return;
   }
   // Porta de entrada: sem usuários → criar o primeiro (dono); sem sessão → login.
   if(precisaPrimeiroAcesso() || precisaLogin()){
@@ -2572,10 +2585,11 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-nav],[data-hist],[data-histf],[data-novo],[data-novavulsa],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],[data-estfiltro],[data-estitem],[data-estnovo],[data-estajuste],[data-delmov],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin,#btnEstSalvar,#btnEstCancel,#btnEstMin");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-usarlocal],[data-nav],[data-hist],[data-histf],[data-novo],[data-novavulsa],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],[data-estfiltro],[data-estitem],[data-estnovo],[data-estajuste],[data-delmov],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin,#btnEstSalvar,#btnEstCancel,#btnEstMin");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
+    if(t.dataset.usarlocal!==undefined){ var c=cfgLoad(); c.scriptUrl=""; cfgSave(c); toast("Usando só este aparelho…"); setTimeout(function(){ location.reload(); },300); return; }
     if(t.dataset.nav){ S.view=t.dataset.nav; render(); return; }
     if(t.dataset.hist){ S.aFer=t.dataset.hist; S.view="historico"; render(); return; }
     if(t.dataset.histf){ S.histFiltro=t.dataset.histf; render(); return; }
