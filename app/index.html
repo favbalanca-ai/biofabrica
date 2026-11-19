@@ -525,7 +525,7 @@ function aplicarEstado(e){
 function precisaLogin(){ return !precisaPrimeiroAcesso() && !usuarioAtual(); }
 
 // ─── ESTADO ────────────────────────────────────────────────────────
-var S = { estado:null, view:"mapa", aFer:null, aLoteId:null, aVisitaId:null, secao:"ficha", cadAba:"produtos", usuario:"", editCad:null, busca:"", histFiltro:"todos", estFiltro:"todos", aEstItem:null, estForm:null };
+var S = { estado:null, view:"mapa", aFer:null, aLoteId:null, aVisitaId:null, secao:"ficha", cadAba:"produtos", usuario:"", editCad:null, busca:"", histFiltro:"todos", estFiltro:"todos", aEstItem:null, estForm:null, estBusca:"", planErro:null };
 function loteAtual(){ return (S.estado.lotes||[]).find(function(l){return l.id===S.aLoteId;}); }
 function lotesDe(ferId){ return (S.estado.lotes||[]).filter(function(l){return l.fermentador===ferId;}); }
 function ferConfig(id){ return (S.estado.config||[]).find(function(f){return f.id===id;})||{volume:""}; }
@@ -638,6 +638,81 @@ function estornarLote(loteId){
   var teve=estMovs().some(function(m){return String(m.loteId)===String(loteId);});
   if(S.estado.estoqueMovs) S.estado.estoqueMovs=S.estado.estoqueMovs.filter(function(m){return String(m.loteId)!==String(loteId);});
   if(teve) api.excluirMovsDoLote(loteId);
+}
+
+// ─── INTEGRAÇÃO COM O PLANEJAMENTO (estoque de biológicos) ─────────
+// O estoque é um ESPELHO dos produtos BIOLÓGICOS do app Planejamento. A BioFábrica
+// lê o saldo (getEstoque) e, ao concluir um lote, lança a baixa dos ingredientes
+// (SAÍDA) e a entrada do beneficiado (ENTRADA) na planilha do Planejamento, via a
+// ponte /exec. Idempotente por id (reenviar o mesmo id substitui, nunca duplica).
+var PLAN_URL_DEFAULT="https://script.google.com/macros/s/AKfycbwzokwBc-LwRBBMmJ1XZgrQrpChzfbv7DMcJ2VTlvjsBMyUhFjLuR69fqn3pkN6ntx9/exec";
+function planUrl(){ var c=cfgLoad(); return String((c.planUrl!==undefined?c.planUrl:PLAN_URL_DEFAULT)||"").trim(); }
+function planToken(){ var c=cfgLoad(); return String(c.planToken||"").trim(); }
+function planLocal(){ var c=cfgLoad(); return c.planLocal||"FA"; }
+function planLigado(){ return !!(planUrl() && planToken()); }
+function planCall(fn,extra){
+  var body=Object.assign({ fn:fn, token:planToken() }, extra||{});
+  var ctrl=(typeof AbortController!=="undefined")?new AbortController():null;
+  var tid=ctrl?setTimeout(function(){try{ctrl.abort();}catch(_){}} ,25000):null;
+  var p=fetch(planUrl(), { method:"POST", redirect:"follow", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify(body), signal:ctrl?ctrl.signal:undefined })
+    .then(function(r){ return r.json(); }).then(function(j){ if(j&&j.ok) return j.data; var e=new Error((j&&j.error)||"Erro no Planejamento"); e.planErro=true; throw e; });
+  return p.then(function(v){ if(tid)clearTimeout(tid); return v; }, function(err){ if(tid)clearTimeout(tid); throw err; });
+}
+var PLAN_CACHE_KEY="biofabrica_plan_estoque_v1";
+function planCacheLoad(){ try{ return JSON.parse(localStorage.getItem(PLAN_CACHE_KEY))||null; }catch(_){ return null; } }
+function planCacheSave(o){ try{ localStorage.setItem(PLAN_CACHE_KEY, JSON.stringify(o||null)); }catch(_){} }
+function biologicos(){ var c=planCacheLoad(); return (c&&c.biologicos)||[]; }
+function bioItem(nome){ var n=String(nome||"").trim().toLowerCase(); return biologicos().find(function(x){return String(x.nome).trim().toLowerCase()===n;})||null; }
+var _planSync=false;
+function sincronizarPlan(cb){
+  if(!planLigado()){ if(cb)cb(false); return; }
+  _planSync=true; if(S.view==="estoque") render();
+  planCall("getEstoque").then(function(d){ _planSync=false; planCacheSave({biologicos:(d&&d.biologicos)||[], ts:new Date().toISOString()}); if(S.view==="estoque") render(); if(cb)cb(true); })
+    .catch(function(err){ _planSync=false; S.planErro=(err&&err.message)||String(err); if(S.view==="estoque") render(); if(cb)cb(false,err); });
+}
+// Fila de movimentos pendentes para o Planejamento (idempotente por id).
+var PLAN_OUT_KEY="biofabrica_plan_outbox_v1";
+function planOut(){ try{ return JSON.parse(localStorage.getItem(PLAN_OUT_KEY))||[]; }catch(_){ return []; } }
+function planOutSave(q){ try{ localStorage.setItem(PLAN_OUT_KEY, JSON.stringify(q||[])); }catch(_){} }
+function planEnfileirar(mov){ var q=planOut().filter(function(m){return m.id!==mov.id;}); q.push(mov); planOutSave(q); }
+function enviarMovPlan(mov){
+  return planCall("movimentar",{ mov:mov }).then(function(d){
+    planOutSave(planOut().filter(function(m){return m.id!==mov.id;}));
+    if(d && d.biologicos) planCacheSave({biologicos:d.biologicos, ts:new Date().toISOString()});
+    return d;
+  }).catch(function(err){
+    if(err && err.planErro) throw err;      // servidor recusou (ex.: nome não é biológico): não enfileira
+    planEnfileirar(mov); throw err;          // falha de rede: fica na fila
+  });
+}
+var _planFlush=false;
+function flushPlanOut(){
+  if(_planFlush || !planLigado()) return Promise.resolve();
+  if(typeof navigator!=="undefined" && navigator.onLine===false) return Promise.resolve();
+  if(!planOut().length) return Promise.resolve();
+  _planFlush=true;
+  return _planFlushPass({}).then(function(){},function(){}).then(function(){ _planFlush=false; if(S.view==="estoque") render(); });
+}
+function _planFlushPass(tried){
+  var q=planOut(), it=null;
+  for(var i=0;i<q.length;i++){ if(!tried[q[i].id]){ it=q[i]; break; } }
+  if(!it) return Promise.resolve();
+  tried[it.id]=true;
+  return planCall("movimentar",{mov:it}).then(function(){ planOutSave(planOut().filter(function(m){return m.id!==it.id;})); return _planFlushPass(tried); })
+    .catch(function(err){ if(err&&err.planErro){ return _planFlushPass(tried); } return Promise.reject(err); });
+}
+// Ao CONCLUIR um lote: baixa dos ingredientes (SAÍDA) + entrada do beneficiado (ENTRADA).
+function movimentarPlanConclusao(l){
+  if(!planLigado() || ehAvulsa(l)) return;
+  var V=Number(l.volumeFab)||Number(l.volumeFinal)||0, lote="Lote "+(l.loteNum||l.id), movs=[];
+  if(l.inoculo){ var qi=qtdInsumo(insumoDe("inoculos",l.inoculo),V); if(qi&&qi.qtd>0) movs.push({ id:"biofab-"+l.id+"-ing-inoc", tipo:"SAÍDA", produto:l.inoculo, qtd:qi.qtd, data:nowDate(), origem:lote, local:planLocal() }); }
+  if(l.meio){ var qm=qtdInsumo(insumoDe("meios",l.meio),V); if(qm&&qm.qtd>0) movs.push({ id:"biofab-"+l.id+"-ing-meio", tipo:"SAÍDA", produto:l.meio, qtd:qm.qtd, data:nowDate(), origem:lote, local:planLocal() }); }
+  var volB=Number(l.volumeFinal||l.volumeFab)||0;
+  if(l.produto && volB>0) movs.push({ id:"biofab-"+l.id+"-prod", tipo:"ENTRADA", produto:l.produto, qtd:volB, data:nowDate(), origem:lote, local:planLocal() });
+  if(!movs.length) return;
+  var avisos=[], seq=Promise.resolve();
+  movs.forEach(function(m){ seq=seq.then(function(){ return enviarMovPlan(m).catch(function(err){ if(err&&err.planErro) avisos.push(m.produto+": "+(err.message||"recusado")); }); }); });
+  seq.then(function(){ sincronizarPlan(); if(avisos.length) toast("Planejamento: "+avisos.join(" · "),"err"); else toast("Estoque do Planejamento atualizado."); });
 }
 
 function ferStatusDeLote(status){ return (status==="Concluído"||status==="Reprovado") ? "Disponível" : status; }
@@ -887,7 +962,7 @@ function renderTabbar(){
   if(S.view==="lote"){ try{ if(ehAvulsa(loteAtual())) atual="avulsas"; }catch(_){} }
   var itens=[["mapa","🏭","Início"],["geral","📋","Histórico"],["avulsas","🧪","Avulsas"],["visitas","👥","Visitas"],["estoque","📦","Estoque"],["cadastros","📚","Cadastros"],["painel","📊","Painel"]];
   tb.innerHTML=itens.map(function(it){ return '<button data-nav="'+it[0]+'" class="'+(atual===it[0]?"on":"")+'"><span class="ic">'+it[1]+'</span>'+it[2]+'</button>'; }).join("");
-  tb.onclick=function(ev){ var b=ev.target.closest("[data-nav]"); if(b){ S.view=b.dataset.nav; render(); } };
+  tb.onclick=function(ev){ var b=ev.target.closest("[data-nav]"); if(b){ S.view=b.dataset.nav; render(); if(S.view==="estoque"){ flushPlanOut(); sincronizarPlan(); } } };
 }
 
 // ─── SELO / STATUS ─────────────────────────────────────────────────
@@ -1032,116 +1107,64 @@ function novaAvulsa(tipo){
   }).catch(function(){ overlay(false); toast("Erro ao criar análise","err"); });
 }
 
-// ─── ESTOQUE (tela) ────────────────────────────────────────────────
-function nomesEstoqueSugeridos(){
-  var set={}; estItens().forEach(function(x){set[x.nome]=1;});
-  nomesInoc().concat(nomesMeio()).concat(nomesProd()).forEach(function(n){ if(n) set[n]=1; });
-  return Object.keys(set).sort(function(a,b){return a.localeCompare(b);});
-}
+// ─── ESTOQUE (tela · espelho do Planejamento) ──────────────────────
 function fmtNum(n){ n=Number(n); if(isNaN(n)) return "—"; return (Math.round(n*100)/100).toLocaleString("pt-BR"); }
-function cardLancamento(){
-  var f=S.estForm; if(!f) return "";
-  if(f.modo==="ajuste"){
-    var it=estItem(f.nome)||{};
-    return '<div class="card" style="border:2px solid var(--brand)"><div class="sec-title">⚖ Ajuste de inventário — '+esc(f.nome)+'</div>'
-      +'<p class="muted" style="margin-top:0">Saldo atual: <b>'+fmtNum(estSaldo(f.nome))+' '+esc(it.unidade||"")+'</b>. Informe o <b>saldo correto</b> (contagem física).</p>'
-      +fieldNum("Novo saldo","est_saldo","","Ex: 120")
-      +'<div class="btn-row"><button class="btn green" id="btnEstSalvar">💾 Ajustar</button><button class="btn sec" id="btnEstCancel">Cancelar</button></div></div>';
-  }
-  var opts=nomesEstoqueSugeridos().map(function(n){return '<option value="'+esc(n)+'">';}).join("");
-  return '<div class="card" style="border:2px solid var(--brand)"><div class="sec-title">＋ Entrada no estoque</div>'
-    +'<div class="field"><label>Item</label><input id="est_nome" list="est_nomes" value="'+esc(f.nome||"")+'" placeholder="Inóculo, meio, produto…"><datalist id="est_nomes">'+opts+'</datalist></div>'
-    +'<div class="grid2">'+fieldNum("Quantidade","est_qtd","","Ex: 50")+field("Unidade","est_unid",f.unidade||"","text","L, kg, mL, g")+'</div>'
-    +field("Origem","est_origem","","text","Compra / recebimento / doação")
-    +'<div class="btn-row"><button class="btn green" id="btnEstSalvar">💾 Registrar entrada</button><button class="btn sec" id="btnEstCancel">Cancelar</button></div></div>';
+function telaConectarPlan(){
+  var c=cfgLoad(), loc=c.planLocal||"FA";
+  return '<h1>Estoque de biológicos</h1>'
+    +'<div class="card" style="border-left:5px solid var(--brand)"><div class="sec-title">Conectar ao Planejamento</div>'
+    +'<p class="muted" style="margin-top:0">O estoque é um <b>espelho</b> dos produtos BIOLÓGICOS do app Planejamento. Cole a <b>URL do /exec</b> e o <b>token</b> da ponte (uma vez neste aparelho).</p>'
+    +'<div class="field"><label>URL do /exec</label><input id="plan_url" type="url" inputmode="url" value="'+esc(planUrl())+'" placeholder="https://script.google.com/…/exec"></div>'
+    +'<div class="field"><label>Token</label><input id="plan_token" type="text" value="'+esc(planToken())+'" placeholder="ex.: fazendaaguaviva_biofabrica"></div>'
+    +'<div class="field"><label>Fazenda (local do estoque)</label><select id="plan_local"><option value="FA"'+(loc==="FA"?" selected":"")+'>Água Viva (FA)</option><option value="FE"'+(loc==="FE"?" selected":"")+'>Espora (FE)</option></select></div>'
+    +'<div class="btn-row"><button class="btn green" id="btnPlanSalvar">🔌 Conectar e testar</button></div></div>';
 }
 function viewEstoque(){
-  var itens=estItens().slice();
-  var filtro=S.estFiltro||"todos";
-  var baixos=itens.filter(estBaixo).length;
-  function chip(id,label){ return '<button class="seg'+((S.estFiltro||"todos")===id?" on":"")+'" data-estfiltro="'+id+'">'+esc(label)+'</button>'; }
-  var lista=itens.filter(function(it){
-    if(filtro==="insumo") return it.tipo!=="beneficiado";
-    if(filtro==="beneficiado") return it.tipo==="beneficiado";
-    if(filtro==="baixo") return estBaixo(it);
-    return true;
-  }).sort(function(a,b){ return a.nome.localeCompare(b.nome); });
-  var h='<h1>Estoque de insumos</h1>'
-    +'<p class="sub2">Baixa automática do inóculo/meio ao iniciar o lote; entrada do beneficiado ao concluir. Toque num item para o histórico.</p>'
-    +(S.estForm?cardLancamento():'<div class="btn-row"><button class="btn green" data-estnovo="entrada">＋ Entrada (compra/recebimento)</button></div>')
-    +'<div class="segs" style="flex-wrap:wrap;margin:10px 0">'
-      +chip("todos","Todos ("+itens.length+")")+chip("insumo","Insumos")+chip("beneficiado","Beneficiados")+chip("baixo","Baixo ("+baixos+")")
-    +'</div>';
-  if(!lista.length){ h+='<div class="vazio">'+(itens.length?"Nada neste filtro.":"Estoque vazio. Ele se preenche sozinho quando você iniciar/concluir lotes, ou registre uma entrada manual.")+'</div>'; return h; }
-  lista.forEach(function(it){
-    var saldo=estSaldo(it.nome), baixo=estBaixo(it);
-    var cor=it.tipo==="beneficiado"?"#2563eb":"#4a7c59";
-    h+='<div class="card" style="border-left:5px solid '+(baixo?"#c8860a":cor)+'" data-estitem="'+esc(it.nome)+'">'
-      +'<div class="row"><div><b>'+esc(it.nome)+'</b> '+(it.tipo==="beneficiado"?'<span class="muted">· beneficiado</span>':'<span class="muted">· insumo</span>')+'</div>'
-      +'<div style="text-align:right"><b style="font-size:16px'+(baixo?';color:#c8860a':'')+'">'+fmtNum(saldo)+' '+esc(it.unidade||"")+'</b>'+(baixo?'<div class="muted" style="color:#c8860a">⚠ abaixo do mínimo</div>':'')+'</div></div></div>';
+  if(!planLigado()) return telaConectarPlan();
+  var cache=planCacheLoad(), bio=biologicos();
+  var termo=(S.estBusca||"").trim().toLowerCase();
+  var lista=bio.filter(function(x){ return !termo || String(x.nome).toLowerCase().indexOf(termo)>=0; });
+  var pend=planOut().length;
+  var statusTxt = _planSync ? "🔄 sincronizando…"
+    : (cache&&cache.ts ? "Atualizado "+fmt(cache.ts) : (S.planErro?("⚠ "+esc(String(S.planErro).slice(0,60))):"—"));
+  var h='<div class="row"><h1>Estoque de biológicos</h1><button class="btn sec small" id="btnPlanSync">🔄 Atualizar</button></div>'
+    +'<p class="sub2">Espelho do Planejamento ('+cfgLoad().planLocal+'). Baixa e beneficiado são lançados ao <b>concluir</b> o lote.</p>'
+    +'<div class="muted" style="font-size:12px;margin:0 0 8px">'+statusTxt+(pend?' · <b style="color:#c8860a">⏳ '+pend+' pendente(s)</b>':'')+'</div>'
+    +'<div class="field"><input id="est_busca" type="search" inputmode="search" autocomplete="off" placeholder="🔎 Buscar biológico…" value="'+esc(S.estBusca||"")+'"></div>';
+  if(!bio.length){ h+='<div class="vazio">'+(_planSync?"Buscando…":"Nenhum biológico ainda. Toque em Atualizar (precisa de internet na primeira vez).")+'</div>'; return h; }
+  if(!lista.length){ h+='<div class="vazio">Nada encontrado para a busca.</div>'; return h; }
+  h+='<div class="muted" style="font-size:12px;margin-bottom:6px">'+lista.length+' item(ns)</div>';
+  lista.forEach(function(x){
+    var baixo=Number(x.saldo)<=0;
+    h+='<div class="card" style="border-left:5px solid '+(baixo?"#c8860a":"#2563eb")+'" data-planitem="'+esc(x.nome)+'">'
+      +'<div class="row"><div><b>'+esc(x.nome)+'</b></div>'
+      +'<div style="text-align:right"><b style="font-size:16px'+(baixo?';color:#c8860a':'')+'">'+fmtNum(x.saldo)+' '+esc(x.unidade||"")+'</b>'
+      +((x.saldoFA!==undefined||x.saldoFE!==undefined)?'<div class="muted" style="font-size:11px">FA '+fmtNum(x.saldoFA||0)+' · FE '+fmtNum(x.saldoFE||0)+'</div>':'')
+      +'</div></div></div>';
   });
   return h;
 }
 function viewEstItem(){
-  var nome=S.aEstItem; var it=estItem(nome);
-  if(!it) return '<button class="voltar" data-nav="estoque">← Estoque</button><div class="vazio">Item não encontrado.</div>';
-  var saldo=estSaldo(nome), movs=estMovsDe(nome);
-  var h='<button class="voltar" data-nav="estoque">← Estoque</button>'
-    +'<div class="row"><h1>'+esc(nome)+'</h1><b style="font-size:18px'+(estBaixo(it)?';color:#c8860a':'')+'">'+fmtNum(saldo)+' '+esc(it.unidade||"")+'</b></div>'
-    +'<p class="sub2">'+(it.tipo==="beneficiado"?"Produzido pela biofábrica":"Insumo (matéria-prima)")+'</p>';
-  if(S.estForm){ h+=cardLancamento(); }
-  else {
-    h+='<div class="btn-row"><button class="btn green small" data-estnovo="entrada|'+esc(nome)+'">＋ Entrada</button>'
-      +'<button class="btn sec small" data-estajuste="'+esc(nome)+'">⚖ Ajuste</button></div>'
-      +'<div class="field" style="margin-top:10px"><label>Estoque mínimo (alerta)</label><div class="btn-row"><input id="est_min" type="number" inputmode="decimal" value="'+esc(it.minimo||"")+'" placeholder="0 = sem alerta" style="flex:1"><button class="btn sec small" id="btnEstMin">Salvar</button></div></div>';
-  }
-  h+='<div class="muted" style="font-size:12px;margin:12px 0 6px">Histórico de movimentos</div>';
-  if(!movs.length) h+='<div class="vazio">Sem movimentos.</div>';
-  movs.forEach(function(m){
-    var ent=m.tipo!=="saida", manual=!/^consumo|^producao/.test(m.papel||"");
-    h+='<div class="card" style="border-left:5px solid '+(ent?"#16a34a":"#c8860a")+';padding:10px 12px"><div class="row">'
-      +'<div><b style="color:'+(ent?"#16a34a":"#c8860a")+'">'+(ent?"+":"−")+fmtNum(m.qtd)+' '+esc(m.unidade||"")+'</b>'
-      +'<div class="muted">'+esc(m.origem||(ent?"Entrada":"Saída"))+'</div>'
-      +'<div class="muted" style="font-size:11px">🕐 '+fmt(m.dt)+(m.usuario?' · 👤 '+esc(m.usuario):'')+'</div></div>'
-      +(manual?'<button class="btn danger small" data-delmov="'+esc(m.id)+'">✕</button>':'')
-      +'</div></div>';
-  });
+  var nome=S.aEstItem, x=bioItem(nome);
+  var h='<button class="voltar" data-nav="estoque">← Estoque</button>';
+  if(!x) return h+'<div class="vazio">Item não encontrado no espelho.</div>';
+  h+='<div class="row"><h1>'+esc(x.nome)+'</h1><b style="font-size:18px'+(Number(x.saldo)<=0?';color:#c8860a':'')+'">'+fmtNum(x.saldo)+' '+esc(x.unidade||"")+'</b></div>'
+    +'<p class="sub2">Biológico (Planejamento)</p>'
+    +'<div class="grid2" style="margin:8px 0">'
+      +'<div class="stat"><b style="font-size:20px">'+fmtNum(x.saldoFA!==undefined?x.saldoFA:x.saldo)+'</b><span>Água Viva (FA)</span></div>'
+      +'<div class="stat" style="border-top-color:#5a7fa8"><b style="font-size:20px">'+fmtNum(x.saldoFE||0)+'</b><span>Espora (FE)</span></div>'
+    +'</div>';
+  var pend=planOut().filter(function(m){return String(m.produto).trim().toLowerCase()===String(nome).trim().toLowerCase();});
+  if(pend.length){ h+='<div class="muted" style="font-size:12px;margin:10px 0 6px">⏳ Movimentos pendentes (ainda não enviados)</div>';
+    pend.forEach(function(m){ h+='<div class="card" style="border-left:5px solid #c8860a;padding:8px 12px"><b>'+(m.tipo==="ENTRADA"?"+":"−")+fmtNum(m.qtd)+' '+esc(m.unidade||x.unidade||"")+'</b> <span class="muted">'+esc(m.origem||"")+'</span></div>'; }); }
   return h;
 }
-function salvarLancamento(){
-  var f=S.estForm; if(!f) return;
-  if(f.modo==="ajuste"){
-    var nomeA=f.nome, novo=num(val("est_saldo"));
-    if(novo===null){ toast("Informe o novo saldo.","err"); return; }
-    var delta=Math.round((novo-estSaldo(nomeA))*100)/100;
-    if(delta===0){ S.estForm=null; render(); toast("Saldo já está nesse valor."); return; }
-    var itA=estItem(nomeA)||{};
-    overlay(true);
-    lancarMov(nomeA, delta>0?"entrada":"saida", Math.abs(delta), itA.unidade||"", "Ajuste de inventário", "", "ajuste", itA.tipo||"insumo")
-      .then(function(){ S.estForm=null; overlay(false); render(); toast("Saldo ajustado para "+fmtNum(novo)+"."); })
-      .catch(function(){ overlay(false); toast("Erro","err"); });
-    return;
-  }
-  var nome=val("est_nome").trim(); if(!nome){ toast("Informe o item.","err"); return; }
-  var q=num(val("est_qtd")); if(q===null||q<=0){ toast("Informe a quantidade.","err"); return; }
-  var it=estItem(nome);
+function salvarPlanCfg(){
+  var url=val("plan_url").trim(), tok=val("plan_token").trim();
+  if(!url||!tok){ toast("Preencha URL e token.","err"); return; }
+  var c=cfgLoad(); c.planUrl=url; c.planToken=tok; c.planLocal=val("plan_local")||"FA"; cfgSave(c);
   overlay(true);
-  lancarMov(nome,"entrada",q,val("est_unid").trim()||(it?it.unidade:""),val("est_origem").trim()||"Entrada (compra/recebimento)","","",it?it.tipo:"insumo")
-    .then(function(){ S.estForm=null; overlay(false); render(); toast("Entrada registrada."); })
-    .catch(function(){ overlay(false); toast("Erro","err"); });
-}
-function salvarMinimo(){
-  var it=estItem(S.aEstItem); if(!it) return;
-  it.minimo=val("est_min"); overlay(true);
-  api.salvarEstoqueItem(it).then(function(rec){ if(rec) Object.assign(it,rec); overlay(false); render(); toast("Mínimo salvo."); })
-    .catch(function(){ overlay(false); toast("Erro","err"); });
-}
-function delMovManual(id){
-  var m=estMovs().find(function(x){return x.id===id;}); if(!m) return;
-  if(!confirm("Remover este movimento de estoque?")) return;
-  overlay(true);
-  api.excluirMovEstoque(id).then(function(){ S.estado.estoqueMovs=estMovs().filter(function(x){return x.id!==id;}); overlay(false); render(); toast("Movimento removido."); })
-    .catch(function(){ overlay(false); toast("Erro","err"); });
+  sincronizarPlan(function(ok,err){ overlay(false); render(); toast(ok?"Conectado! Estoque carregado.":"Falhou: "+((err&&err.message)||"sem resposta"),ok?"":"err"); });
 }
 
 // ─── PAINEL & ANÁLISE ──────────────────────────────────────────────
@@ -2142,7 +2165,6 @@ function salvarFicha(){
   coletarFicha(l);
   if(!l.operador && S.usuario) l.operador=S.usuario;   // registra quem está operando
   if(l.status==="Disponível" || !l.status) l.status="Em Processo";
-  if(l.status==="Em Processo") baixaInsumosLote(l); // dá baixa do inóculo/meio (uma vez por lote)
   var indoAcompanhar = (l.status==="Em Processo");
   if(!l.dtInicio){
     var th=l.tempoProducaoH||tempoDe("meios",l.meio)||tempoDe("inoculos",l.inoculo);
@@ -2191,7 +2213,6 @@ function excluirLote(){
   if(!confirm(avulsa?"Excluir esta análise avulsa? Esta ação não pode ser desfeita.":"Excluir este lote e seus registros? Esta ação não pode ser desfeita.")) return;
   overlay(true);
   api.excluirLote(l.id).then(function(){
-    estornarLote(l.id); // estorna os movimentos de estoque do lote
     S.estado.lotes=S.estado.lotes.filter(function(x){return x.id!==l.id;});
     if(avulsa){ S.view="avulsas"; }
     else { S.estado.fermentadores[l.fermentador]="Disponível"; api.setFermentadorStatus(l.fermentador,"Disponível"); S.view="historico"; }
@@ -2318,7 +2339,7 @@ function concluirLote(){
   }
   if(!confirm("Concluir este lote? "+rotuloUnidade(l.fermentador)+" "+nomeUnidade(l.fermentador)+" volta a ficar Disponível.")) return;
   l.status="Concluído"; if(!l.dtFim) l.dtFim=nowDT();
-  entradaBeneficiadoLote(l); // lança o produto beneficiado no estoque (uma vez por lote)
+  movimentarPlanConclusao(l); // baixa dos ingredientes + entrada do beneficiado no Planejamento
   persistLote(l,"Lote concluído. Fermentador liberado.");
 }
 function copiarLaudo(){
@@ -2585,22 +2606,17 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-usarlocal],[data-nav],[data-hist],[data-histf],[data-novo],[data-novavulsa],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],[data-estfiltro],[data-estitem],[data-estnovo],[data-estajuste],[data-delmov],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin,#btnEstSalvar,#btnEstCancel,#btnEstMin");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-usarlocal],[data-nav],[data-hist],[data-histf],[data-novo],[data-novavulsa],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],[data-planitem],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin,#btnPlanSalvar,#btnPlanSync");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
     if(t.dataset.usarlocal!==undefined){ var c=cfgLoad(); c.scriptUrl=""; cfgSave(c); toast("Usando só este aparelho…"); setTimeout(function(){ location.reload(); },300); return; }
-    if(t.dataset.nav){ S.view=t.dataset.nav; render(); return; }
+    if(t.dataset.nav){ S.view=t.dataset.nav; render(); if(S.view==="estoque"){ flushPlanOut(); sincronizarPlan(); } return; }
     if(t.dataset.hist){ S.aFer=t.dataset.hist; S.view="historico"; render(); return; }
     if(t.dataset.histf){ S.histFiltro=t.dataset.histf; render(); return; }
-    if(t.dataset.estfiltro){ S.estFiltro=t.dataset.estfiltro; render(); return; }
-    if(t.dataset.estitem){ S.aEstItem=t.dataset.estitem; S.estForm=null; S.view="estoqueItem"; render(); return; }
-    if(t.dataset.estnovo){ var pn=t.dataset.estnovo.split("|"); S.estForm={modo:"entrada",nome:pn[1]||""}; render(); return; }
-    if(t.dataset.estajuste){ S.estForm={modo:"ajuste",nome:t.dataset.estajuste}; render(); return; }
-    if(t.dataset.delmov){ delMovManual(t.dataset.delmov); return; }
-    if(t.id==="btnEstSalvar"){ salvarLancamento(); return; }
-    if(t.id==="btnEstCancel"){ S.estForm=null; render(); return; }
-    if(t.id==="btnEstMin"){ salvarMinimo(); return; }
+    if(t.dataset.planitem){ S.aEstItem=t.dataset.planitem; S.view="estoqueItem"; render(); return; }
+    if(t.id==="btnPlanSalvar"){ salvarPlanCfg(); return; }
+    if(t.id==="btnPlanSync"){ flushPlanOut(); sincronizarPlan(); return; }
     if(t.dataset.novo){ novoLote(t.dataset.novo); return; }
     if(t.dataset.novavulsa){ novaAvulsa(t.dataset.novavulsa); return; }
     if(t.dataset.abrir){ var p=t.dataset.abrir.split("|"); S.aFer=p[0]; S.aLoteId=p[1]; S.secao="ficha"; S.view="lote"; render(); return; }
@@ -2671,6 +2687,7 @@ function bind(){
   };
   app.oninput=function(ev){
     if(ev.target.id==="busca"){ S.busca=ev.target.value; var caret=ev.target.selectionStart; render(); var b=el("busca"); if(b){ b.focus(); try{ b.setSelectionRange(caret,caret); }catch(_){} } return; }
+    if(ev.target.id==="est_busca"){ S.estBusca=ev.target.value; var cr=ev.target.selectionStart; render(); var eb=el("est_busca"); if(eb){ eb.focus(); try{ eb.setSelectionRange(cr,cr); }catch(_){} } return; }
     if(ev.target.id==="r_mant"){ atualizarUFCprev(); }
     if(ev.target.id==="f_volFab"){ atualizarDoses(); }
     if(/^fg_c[12]_\d$/.test(ev.target.id||"")){ atualizarFungoPrev(); }
@@ -2691,9 +2708,9 @@ el("btnLogout").onclick=logout;
 setInterval(tickCountdowns, 30000);
 setInterval(autoSync, 30000);
 setInterval(flushOutbox, 15000);
-document.addEventListener("visibilitychange", function(){ if(!document.hidden){ flushOutbox(); autoSync(); } });
+document.addEventListener("visibilitychange", function(){ if(!document.hidden){ flushOutbox(); autoSync(); flushPlanOut(); } });
 if(typeof window!=="undefined"){
-  window.addEventListener("online", function(){ atualizarSync(); flushOutbox(); });
+  window.addEventListener("online", function(){ atualizarSync(); flushOutbox(); flushPlanOut(); });
   window.addEventListener("offline", atualizarSync);
   window.addEventListener("beforeunload", function(ev){ if(outboxCount()){ ev.preventDefault(); ev.returnValue=""; return ""; } });
 }
