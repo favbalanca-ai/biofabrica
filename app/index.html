@@ -1229,13 +1229,13 @@ function viewEstItem(){
     pend.forEach(function(m){ h+='<div class="card" style="border-left:5px solid #c8860a;padding:8px 12px"><b>'+(m.tipo==="ENTRADA"?"+":"−")+fmtNum(m.qtd)+' '+esc(m.unidade||x.unidade||"")+'</b> <span class="muted">'+esc(m.origem||"")+'</span></div>'; }); }
   return h;
 }
-// Tela da fila do Planejamento: lotes que ainda não subiram, com o custo de cada
-// ingrediente para informar o R$/un quando o Planejamento recusa "sem custo".
+// Tela da fila do Planejamento: lotes que ainda não subiram (ex.: sem internet
+// na hora, ou ainda aguardando o preço do insumo entrar no estoque do Planejamento).
 function viewFilaPlan(){
   var h='<button class="voltar" data-nav="estoque">← Estoque</button>';
   var q=planOut();
   h+='<div class="row" style="align-items:flex-start"><h1 style="margin-bottom:2px">Fila do Planejamento</h1></div>'
-    +'<p class="sub2" style="margin-top:0">Lotes que ainda não subiram. Se o Planejamento recusar por <b>custo</b>, informe o <b>R$/un</b> do ingrediente e toque em <b>Reenviar</b>.</p>';
+    +'<p class="sub2" style="margin-top:0">Lotes que ainda não subiram. O preço vem sozinho do <b>custo médio do estoque</b> do Planejamento — toque em <b>Reenviar</b> para tentar de novo.</p>';
   if(S.planErro) h+='<div class="alerta" style="margin:6px 0">⚠️ <b>'+esc(String(S.planErro))+'</b></div>';
   if(!q.length){ h+='<div class="vazio">Nada na fila. Tudo subiu. ✅</div>'; return h; }
   q.forEach(function(it){
@@ -1244,13 +1244,9 @@ function viewFilaPlan(){
       +'<div class="row" style="margin-bottom:4px"><b style="font-size:15px">'+esc(it.produto||it.id||"Lote")+'</b>'
       +'<span class="muted" style="font-size:12px">'+esc(it.data||"")+' · '+esc(it.local||"")+(it.volume?(' · '+fmtNum(it.volume)+' L'):'')+'</span></div>';
     if(ings.length){
-      h+='<div class="muted" style="font-size:12px;margin:6px 0 2px">Ingredientes (custo R$/un — deixe em branco se o Planejamento já tem preço):</div>';
+      h+='<div class="muted" style="font-size:12px;margin:6px 0 2px">Ingredientes (baixa no estoque):</div>';
       ings.forEach(function(ig){
-        var cu=icustoGet(ig.produto);
-        h+='<div class="row" style="gap:8px;align-items:center;margin:4px 0">'
-          +'<div style="flex:1;font-size:13px"><b>'+esc(ig.produto)+'</b> <span class="muted">'+fmtNum(ig.qtd)+'</span></div>'
-          +'<div class="field" style="margin:0;width:120px"><input type="number" inputmode="decimal" step="0.01" min="0" placeholder="R$/un" value="'+(cu!=null?cu:"")+'" data-icusto="'+esc(ig.produto)+'" style="text-align:right"></div>'
-          +'</div>';
+        h+='<div style="font-size:13px;margin:3px 0"><b>'+esc(ig.produto)+'</b> <span class="muted">'+fmtNum(ig.qtd)+'</span></div>';
       });
     }
     h+='<div class="btn-row" style="margin-top:10px">'
@@ -1260,10 +1256,7 @@ function viewFilaPlan(){
   });
   return h;
 }
-function salvarCustosFila(){
-  var ins=document.querySelectorAll("[data-icusto]");
-  for(var i=0;i<ins.length;i++){ icustoSet(ins[i].getAttribute("data-icusto"), ins[i].value); }
-}
+function salvarCustosFila(){ /* preço vem do estoque do Planejamento; nada a salvar aqui */ }
 function reenviarLoteFila(id){
   salvarCustosFila();
   var it=planOut().filter(function(m){return String(m.id)===String(id);})[0];
