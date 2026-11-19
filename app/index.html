@@ -525,7 +525,7 @@ function aplicarEstado(e){
 function precisaLogin(){ return !precisaPrimeiroAcesso() && !usuarioAtual(); }
 
 // ─── ESTADO ────────────────────────────────────────────────────────
-var S = { estado:null, view:"mapa", aFer:null, aLoteId:null, aVisitaId:null, secao:"ficha", cadAba:"produtos", usuario:"", editCad:null, busca:"", histFiltro:"todos", estFiltro:"todos", aEstItem:null, estForm:null, estBusca:"", planErro:null };
+var S = { estado:null, view:"mapa", aFer:null, aLoteId:null, aVisitaId:null, secao:"ficha", cadAba:"produtos", usuario:"", editCad:null, busca:"", histFiltro:"todos", estFiltro:"todos", aEstItem:null, estForm:null, estBusca:"", planErro:null, planConfig:false };
 function loteAtual(){ return (S.estado.lotes||[]).find(function(l){return l.id===S.aLoteId;}); }
 function lotesDe(ferId){ return (S.estado.lotes||[]).filter(function(l){return l.fermentador===ferId;}); }
 function ferConfig(id){ return (S.estado.config||[]).find(function(f){return f.id===id;})||{volume:""}; }
@@ -1117,17 +1117,18 @@ function telaConectarPlan(){
     +'<div class="field"><label>URL do /exec</label><input id="plan_url" type="url" inputmode="url" value="'+esc(planUrl())+'" placeholder="https://script.google.com/…/exec"></div>'
     +'<div class="field"><label>Token</label><input id="plan_token" type="text" value="'+esc(planToken())+'" placeholder="ex.: fazendaaguaviva_biofabrica"></div>'
     +'<div class="field"><label>Fazenda (local do estoque)</label><select id="plan_local"><option value="FA"'+(loc==="FA"?" selected":"")+'>Água Viva (FA)</option><option value="FE"'+(loc==="FE"?" selected":"")+'>Espora (FE)</option></select></div>'
-    +'<div class="btn-row"><button class="btn green" id="btnPlanSalvar">🔌 Conectar e testar</button></div></div>';
+    +'<div class="btn-row"><button class="btn green" id="btnPlanSalvar">🔌 Conectar e testar</button>'
+    +(planLigado()?'<button class="btn sec" data-planconfig="0">Cancelar</button>':'')+'</div></div>';
 }
 function viewEstoque(){
-  if(!planLigado()) return telaConectarPlan();
+  if(!planLigado() || S.planConfig) return telaConectarPlan();
   var cache=planCacheLoad(), bio=biologicos();
   var termo=(S.estBusca||"").trim().toLowerCase();
   var lista=bio.filter(function(x){ return !termo || String(x.nome).toLowerCase().indexOf(termo)>=0; });
   var pend=planOut().length;
   var statusTxt = _planSync ? "🔄 sincronizando…"
     : (cache&&cache.ts ? "Atualizado "+fmt(cache.ts) : (S.planErro?("⚠ "+esc(String(S.planErro).slice(0,60))):"—"));
-  var h='<div class="row"><h1>Estoque de biológicos</h1><button class="btn sec small" id="btnPlanSync">🔄 Atualizar</button></div>'
+  var h='<div class="row"><h1>Estoque de biológicos</h1><div class="btn-row"><button class="btn sec small" data-planconfig="1">⚙ Conexão</button><button class="btn sec small" id="btnPlanSync">🔄 Atualizar</button></div></div>'
     +'<p class="sub2">Espelho do Planejamento ('+cfgLoad().planLocal+'). Baixa e beneficiado são lançados ao <b>concluir</b> o lote.</p>'
     +'<div class="muted" style="font-size:12px;margin:0 0 8px">'+statusTxt+(pend?' · <b style="color:#c8860a">⏳ '+pend+' pendente(s)</b>':'')+'</div>'
     +'<div class="field"><input id="est_busca" type="search" inputmode="search" autocomplete="off" placeholder="🔎 Buscar biológico…" value="'+esc(S.estBusca||"")+'"></div>';
@@ -1163,8 +1164,9 @@ function salvarPlanCfg(){
   var url=val("plan_url").trim(), tok=val("plan_token").trim();
   if(!url||!tok){ toast("Preencha URL e token.","err"); return; }
   var c=cfgLoad(); c.planUrl=url; c.planToken=tok; c.planLocal=val("plan_local")||"FA"; cfgSave(c);
+  S.planConfig=true; // fica na tela de conexão até dar certo
   overlay(true);
-  sincronizarPlan(function(ok,err){ overlay(false); render(); toast(ok?"Conectado! Estoque carregado.":"Falhou: "+((err&&err.message)||"sem resposta"),ok?"":"err"); });
+  sincronizarPlan(function(ok,err){ overlay(false); if(ok) S.planConfig=false; render(); toast(ok?"Conectado! Estoque carregado.":"Falhou: "+((err&&err.message)||"sem resposta"),ok?"":"err"); });
 }
 
 // ─── PAINEL & ANÁLISE ──────────────────────────────────────────────
@@ -2606,7 +2608,7 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-usarlocal],[data-nav],[data-hist],[data-histf],[data-novo],[data-novavulsa],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],[data-planitem],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin,#btnPlanSalvar,#btnPlanSync");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-usarlocal],[data-nav],[data-hist],[data-histf],[data-novo],[data-novavulsa],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],[data-planitem],[data-planconfig],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin,#btnPlanSalvar,#btnPlanSync");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -2615,6 +2617,7 @@ function bind(){
     if(t.dataset.hist){ S.aFer=t.dataset.hist; S.view="historico"; render(); return; }
     if(t.dataset.histf){ S.histFiltro=t.dataset.histf; render(); return; }
     if(t.dataset.planitem){ S.aEstItem=t.dataset.planitem; S.view="estoqueItem"; render(); return; }
+    if(t.dataset.planconfig!==undefined){ S.planConfig=(t.dataset.planconfig==="1"); render(); return; }
     if(t.id==="btnPlanSalvar"){ salvarPlanCfg(); return; }
     if(t.id==="btnPlanSync"){ flushPlanOut(); sincronizarPlan(); return; }
     if(t.dataset.novo){ novoLote(t.dataset.novo); return; }
