@@ -667,7 +667,7 @@ var _planSync=false;
 function sincronizarPlan(cb){
   if(!planLigado()){ if(cb)cb(false); return; }
   _planSync=true; if(S.view==="estoque") render();
-  planCall("getEstoque").then(function(d){ _planSync=false; planCacheSave({biologicos:(d&&d.biologicos)||[], ts:new Date().toISOString()}); if(S.view==="estoque") render(); if(cb)cb(true); })
+  planCall("getEstoque").then(function(d){ _planSync=false; S.planErro=null; planCacheSave({biologicos:(d&&d.biologicos)||[], ts:new Date().toISOString()}); if(S.view==="estoque") render(); if(cb)cb(true); })
     .catch(function(err){ _planSync=false; S.planErro=(err&&err.message)||String(err); if(S.view==="estoque") render(); if(cb)cb(false,err); });
 }
 // Fila de movimentos pendentes para o Planejamento (idempotente por id).
@@ -1126,10 +1126,11 @@ function viewEstoque(){
   var termo=(S.estBusca||"").trim().toLowerCase();
   var lista=bio.filter(function(x){ return !termo || String(x.nome).toLowerCase().indexOf(termo)>=0; });
   var pend=planOut().length;
-  var statusTxt = _planSync ? "🔄 sincronizando…"
-    : (cache&&cache.ts ? "Atualizado "+fmt(cache.ts) : (S.planErro?("⚠ "+esc(String(S.planErro).slice(0,60))):"—"));
+  var statusTxt = _planSync ? "🔄 sincronizando…" : (cache&&cache.ts ? "Atualizado "+fmt(cache.ts) : "—");
+  var erroHtml = S.planErro ? '<div class="alerta" style="margin:6px 0">⚠️ <b>'+esc(String(S.planErro))+'</b><br><span style="font-size:12px">Toque em <b>⚙ Conexão</b> para corrigir o token.</span></div>' : "";
   var h='<div class="row"><h1>Estoque de biológicos</h1><div class="btn-row"><button class="btn sec small" data-planconfig="1">⚙ Conexão</button><button class="btn sec small" id="btnPlanSync">🔄 Atualizar</button></div></div>'
     +'<p class="sub2">Espelho do Planejamento ('+cfgLoad().planLocal+'). Baixa e beneficiado são lançados ao <b>concluir</b> o lote.</p>'
+    +erroHtml
     +'<div class="muted" style="font-size:12px;margin:0 0 8px">'+statusTxt+(pend?' · <b style="color:#c8860a">⏳ '+pend+' pendente(s)</b>':'')+'</div>'
     +'<div class="field"><input id="est_busca" type="search" inputmode="search" autocomplete="off" placeholder="🔎 Buscar biológico…" value="'+esc(S.estBusca||"")+'"></div>';
   if(!bio.length){ h+='<div class="vazio">'+(_planSync?"Buscando…":"Nenhum biológico ainda. Toque em Atualizar (precisa de internet na primeira vez).")+'</div>'; return h; }
