@@ -689,10 +689,15 @@ function planOut(){ try{ var q=JSON.parse(localStorage.getItem(PLAN_OUT_KEY))||[
   }catch(_){ return []; } }
 function planOutSave(q){ try{ localStorage.setItem(PLAN_OUT_KEY, JSON.stringify(q||[])); }catch(_){} }
 function planEnfileirar(lote){ var q=planOut().filter(function(m){return m.id!==lote.id;}); q.push(lote); planOutSave(q); }
+// Lotes que já subiram ao Planejamento (para não reenviar o histórico à toa e mostrar ✓).
+var PLAN_SENT_KEY="biofabrica_plan_enviados_v1";
+function planSent(){ try{ return JSON.parse(localStorage.getItem(PLAN_SENT_KEY))||{}; }catch(_){ return {}; } }
+function markPlanSent(id){ if(id==null) return; var m=planSent(); m[String(id)]=new Date().toISOString(); try{ localStorage.setItem(PLAN_SENT_KEY, JSON.stringify(m)); }catch(_){} }
+function loteEnviadoPlan(l){ return !!planSent()[String(l&&(l.loteNum||l.id))]; }
 // Envia UM lote (fn:"lote") — baixa dos ingredientes + entrada do beneficiado + custo.
 function enviarLotePlan(lote){
   return planCall("lote",{ lote:lote }).then(function(d){
-    planOutSave(planOut().filter(function(m){return m.id!==lote.id;}));
+    planOutSave(planOut().filter(function(m){return m.id!==lote.id;})); markPlanSent(lote.id);
     return d;
   }).catch(function(err){
     if(err && err.planErro) throw err;      // servidor recusou (ex.: ingrediente sem preço): NÃO grava, não enfileira
@@ -712,7 +717,7 @@ function _planFlushPass(tried,errs){
   for(var i=0;i<q.length;i++){ if(!tried[q[i].id]){ it=q[i]; break; } }
   if(!it) return Promise.resolve();
   tried[it.id]=true;
-  return planCall("lote",{lote:comCustos(it)}).then(function(){ planOutSave(planOut().filter(function(m){return m.id!==it.id;})); return _planFlushPass(tried,errs); })
+  return planCall("lote",{lote:comCustos(it)}).then(function(){ planOutSave(planOut().filter(function(m){return m.id!==it.id;})); markPlanSent(it.id); return _planFlushPass(tried,errs); })
     .catch(function(err){ if(err&&err.planErro){ if(errs) errs.push(err.message||"recusado"); return _planFlushPass(tried,errs); } return Promise.reject(err); });
 }
 // Custos dos lotes devolvidos pelo Planejamento (guardados no aparelho para exibir).
@@ -1109,6 +1114,7 @@ function viewGeral(){
       +'<div style="font-weight:700;font-size:15px">'+esc(l.produto||"(sem produto)")+(l.microrganismo?' <span class="muted" style="font-weight:400">· '+esc(l.microrganismo)+'</span>':'')+'</div>'
       +'<div class="muted" style="margin-top:3px">'+esc(rotuloCompleto(l.fermentador))+' · 🗓 '+fmtDate(dataLote(l))+'</div>'
       +(res?'<div style="margin-top:6px;font-weight:700;color:var(--green)">🔬 '+esc(res)+'</div>':'')
+      +(l.status==="Concluído"&&planLigado()?'<div class="muted" style="margin-top:4px;font-size:12px">'+(loteEnviadoPlan(l)?'<span style="color:#2e7d32">✓ no estoque do Planejamento</span>':'<span style="color:#c8860a">• ainda não lançado no estoque</span>')+'</div>':'')
       +'</div>';
   });
   return h;
@@ -1197,6 +1203,11 @@ function viewEstoque(){
     +(S.planErro?'<div class="alerta" style="margin:6px 0">⚠️ <b>'+esc(String(S.planErro))+'</b><br><span style="font-size:12px">Toque em <b>⚙</b> (Conexão) para corrigir.</span></div>':"")
     +'<div class="muted" style="font-size:12px;margin:0 0 8px">'+statusTxt
       +(pend?' · <button class="btn sec small" data-planfila style="padding:1px 8px;color:#c8860a;font-weight:700">⏳ '+pend+' na fila ›</button>':'')+'</div>';
+  var nProd=lotesProducaoPendentes().length;
+  if(nProd) h+='<div class="card" style="border-left:5px solid #2e7d32;padding:10px 12px;margin:0 0 10px;background:#f1f8f1">'
+    +'<div style="font-weight:700;font-size:14px">📥 Lançar produção no estoque</div>'
+    +'<div class="muted" style="font-size:12px;margin:2px 0 8px">'+nProd+' lote(s) concluído(s) ainda não lançados — dá baixa nos ingredientes e entrada no beneficiado.</div>'
+    +'<button class="btn green" data-planhist style="width:100%">Lançar '+nProd+' lote(s) no Planejamento</button></div>';
   if(!bio.length){ h+='<div class="vazio">'+(_planSync?"Buscando…":"Nenhum biológico ainda. Toque em <b>🔄 Atualizar</b> (precisa de internet na 1ª vez).")+'</div>'; return h; }
   h+='<div class="field" style="margin-bottom:8px"><input id="est_busca" type="search" inputmode="search" autocomplete="off" placeholder="🔎 Buscar biológico…" value="'+esc(S.estBusca||"")+'"></div>'
     +'<div class="segs" style="flex-wrap:wrap;margin-bottom:10px">'
@@ -1264,7 +1275,7 @@ function reenviarLoteFila(id){
   overlay(true);
   planCall("lote",{lote:comCustos(it)}).then(function(d){
     overlay(false);
-    planOutSave(planOut().filter(function(m){return String(m.id)!==String(id);}));
+    planOutSave(planOut().filter(function(m){return String(m.id)!==String(id);})); markPlanSent(id);
     sincronizarPlan();
     toast("Lote enviado"+(d&&d.custoUnit!=null?(" · R$ "+fmtNum(d.custoUnit)+"/un"):"")+".");
     if(!planOut().length) S.view="estoque";
@@ -1273,6 +1284,30 @@ function reenviarLoteFila(id){
     overlay(false);
     if(err&&err.planErro){ S.planErro=null; toast("Planejamento recusou: "+(err.message||"sem custo"),"err"); }
     else toast("Sem conexão — continua na fila, envia sozinho depois.","err");
+    render();
+  });
+}
+// Lotes CONCLUÍDOS (produção real, não avulsas) que ainda não subiram ao Planejamento.
+function lotesProducaoPlan(){
+  return (S.estado.lotes||[]).filter(function(l){
+    if(ehAvulsa(l) || l.status!=="Concluído") return false;
+    var lote=montarLotePlan(l);
+    return !!(lote.produto || (lote.ingredientes&&lote.ingredientes.length));
+  });
+}
+function lotesProducaoPendentes(){ return lotesProducaoPlan().filter(function(l){ return !loteEnviadoPlan(l); }); }
+// Lança no estoque do Planejamento a baixa + entrada de TODOS os lotes concluídos ainda não enviados.
+function enviarHistoricoPlan(){
+  if(!planLigado()){ toast("Conecte o Planejamento primeiro (⚙).","err"); return; }
+  var ls=lotesProducaoPendentes();
+  if(!ls.length){ toast("Nenhum lote de produção novo para lançar. ✅"); return; }
+  if(!confirm("Lançar no estoque do Planejamento a baixa dos ingredientes e a entrada do beneficiado de "+ls.length+" lote(s) concluído(s)?\n\nÉ seguro repetir: cada lote substitui o anterior, não duplica.")) return;
+  ls.forEach(function(l){ planEnfileirar(montarLotePlan(l)); });
+  overlay(true); toast("Lançando "+ls.length+" lote(s) no estoque…");
+  flushPlanOut().then(function(){
+    overlay(false); var rest=planOut().length;
+    if(!rest) toast("Produção lançada no estoque do Planejamento! ✅");
+    else toast(rest+" lote(s) ficaram na fila — toque em “na fila” para ver o motivo.","err");
     render();
   });
 }
@@ -2745,7 +2780,7 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-usarlocal],[data-nav],[data-hist],[data-histf],[data-novo],[data-novavulsa],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],[data-planitem],[data-planconfig],[data-estfiltro],[data-planflush],[data-planpendlimpar],[data-planfila],[data-planreenviar],[data-plandescartar],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin,#btnPlanSalvar,#btnPlanSync,#btnReenviarPlan");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-usarlocal],[data-nav],[data-hist],[data-histf],[data-novo],[data-novavulsa],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],[data-planitem],[data-planconfig],[data-estfiltro],[data-planflush],[data-planpendlimpar],[data-planfila],[data-planreenviar],[data-plandescartar],[data-planhist],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin,#btnPlanSalvar,#btnPlanSync,#btnReenviarPlan");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -2759,6 +2794,7 @@ function bind(){
     if(t.dataset.planflush!==undefined){ toast("Enviando a fila…"); flushPlanOut().then(function(){ render(); }); return; }
     if(t.dataset.planpendlimpar!==undefined){ if(confirm("Descartar os lançamentos pendentes do Planejamento? (não desfaz o que já subiu)")){ planOutSave([]); render(); toast("Fila descartada."); } return; }
     if(t.dataset.planfila!==undefined){ S.view="planfila"; render(); return; }
+    if(t.dataset.planhist!==undefined){ enviarHistoricoPlan(); return; }
     if(t.dataset.planreenviar!==undefined){ reenviarLoteFila(t.dataset.planreenviar); return; }
     if(t.dataset.plandescartar!==undefined){ var _id=t.dataset.plandescartar; if(confirm("Descartar este lote da fila? (não desfaz o que já subiu)")){ salvarCustosFila(); planOutSave(planOut().filter(function(m){return m.id!==_id;})); render(); toast("Lote descartado."); } return; }
     if(t.id==="btnPlanSalvar"){ salvarPlanCfg(); return; }
