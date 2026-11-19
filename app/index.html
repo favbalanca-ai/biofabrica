@@ -723,7 +723,7 @@ function custoLote(l){ return custosLote()[l&&l.id]||null; }
 // Custo de ingrediente informado no aparelho (R$/un) para quando o Planejamento
 // não acha o insumo no portfólio e recusa o lote "sem custo".
 var PLAN_ICUSTO_KEY="biofabrica_plan_icusto_v1";
-function _normNome(s){ return String(s||"").trim().toLowerCase().replace(/\s+/g," "); }
+function _normNome(s){ return String(s||"").toUpperCase().replace(/\s+/g,"").trim(); }
 function icustos(){ try{ return JSON.parse(localStorage.getItem(PLAN_ICUSTO_KEY))||{}; }catch(_){ return {}; } }
 function icustoGet(nome){ var v=icustos()[_normNome(nome)]; return (v==null||isNaN(Number(v)))?null:Number(v); }
 function icustoSet(nome,v){ var m=icustos(), k=_normNome(nome);
@@ -757,7 +757,10 @@ function enviarLoteConclusao(l){
     if(S.view==="lote"||S.view==="estoque") render();
   }).catch(function(err){
     overlay(false);
-    if(err && err.planErro) toast("Planejamento recusou: "+(err.message||"ingrediente sem preço"),"err");
+    if(err && err.planErro){
+      planEnfileirar(lote); // deixa na fila para você informar o custo e reenviar
+      toast("Planejamento recusou: "+(err.message||"ingrediente sem preço")+" — ficou na fila (Estoque › na fila).","err");
+    }
     else toast("Sem conexão — lote na fila do Planejamento, envia sozinho depois.","err");
     if(S.view==="lote"||S.view==="estoque") render();
   });
