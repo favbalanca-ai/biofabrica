@@ -674,15 +674,15 @@ function sincronizarPlan(cb){
 var PLAN_OUT_KEY="biofabrica_plan_outbox_v1";
 function planOut(){ try{ return JSON.parse(localStorage.getItem(PLAN_OUT_KEY))||[]; }catch(_){ return []; } }
 function planOutSave(q){ try{ localStorage.setItem(PLAN_OUT_KEY, JSON.stringify(q||[])); }catch(_){} }
-function planEnfileirar(mov){ var q=planOut().filter(function(m){return m.id!==mov.id;}); q.push(mov); planOutSave(q); }
-function enviarMovPlan(mov){
-  return planCall("movimentar",{ mov:mov }).then(function(d){
-    planOutSave(planOut().filter(function(m){return m.id!==mov.id;}));
-    if(d && d.biologicos) planCacheSave({biologicos:d.biologicos, ts:new Date().toISOString()});
+function planEnfileirar(lote){ var q=planOut().filter(function(m){return m.id!==lote.id;}); q.push(lote); planOutSave(q); }
+// Envia UM lote (fn:"lote") — baixa dos ingredientes + entrada do beneficiado + custo.
+function enviarLotePlan(lote){
+  return planCall("lote",{ lote:lote }).then(function(d){
+    planOutSave(planOut().filter(function(m){return m.id!==lote.id;}));
     return d;
   }).catch(function(err){
-    if(err && err.planErro) throw err;      // servidor recusou (ex.: nome não é biológico): não enfileira
-    planEnfileirar(mov); throw err;          // falha de rede: fica na fila
+    if(err && err.planErro) throw err;      // servidor recusou (ex.: ingrediente sem preço): NÃO grava, não enfileira
+    planEnfileirar(lote); throw err;          // falha de rede: fica na fila
   });
 }
 var _planFlush=false;
@@ -698,21 +698,39 @@ function _planFlushPass(tried){
   for(var i=0;i<q.length;i++){ if(!tried[q[i].id]){ it=q[i]; break; } }
   if(!it) return Promise.resolve();
   tried[it.id]=true;
-  return planCall("movimentar",{mov:it}).then(function(){ planOutSave(planOut().filter(function(m){return m.id!==it.id;})); return _planFlushPass(tried); })
+  return planCall("lote",{lote:it}).then(function(){ planOutSave(planOut().filter(function(m){return m.id!==it.id;})); return _planFlushPass(tried); })
     .catch(function(err){ if(err&&err.planErro){ return _planFlushPass(tried); } return Promise.reject(err); });
 }
-// Ao CONCLUIR um lote: baixa dos ingredientes (SAÍDA) + entrada do beneficiado (ENTRADA).
-function movimentarPlanConclusao(l){
-  if(!planLigado() || ehAvulsa(l)) return;
-  var V=Number(l.volumeFab)||Number(l.volumeFinal)||0, lote="Lote "+(l.loteNum||l.id), movs=[];
-  if(l.inoculo){ var qi=qtdInsumo(insumoDe("inoculos",l.inoculo),V); if(qi&&qi.qtd>0) movs.push({ id:"biofab-"+l.id+"-ing-inoc", tipo:"SAÍDA", produto:l.inoculo, qtd:qi.qtd, data:nowDate(), origem:lote, local:planLocal() }); }
-  if(l.meio){ var qm=qtdInsumo(insumoDe("meios",l.meio),V); if(qm&&qm.qtd>0) movs.push({ id:"biofab-"+l.id+"-ing-meio", tipo:"SAÍDA", produto:l.meio, qtd:qm.qtd, data:nowDate(), origem:lote, local:planLocal() }); }
+// Custos dos lotes devolvidos pelo Planejamento (guardados no aparelho para exibir).
+var PLAN_CUSTO_KEY="biofabrica_plan_custos_v1";
+function custosLote(){ try{ return JSON.parse(localStorage.getItem(PLAN_CUSTO_KEY))||{}; }catch(_){ return {}; } }
+function guardarCustoLote(l,d){ if(!l||!d) return; var m=custosLote(); m[l.id]={ custoTotal:d.custoTotal, custoUnit:d.custoUnit, composicao:d.composicao, ingredientes:d.ingredientes, ts:new Date().toISOString() }; try{ localStorage.setItem(PLAN_CUSTO_KEY, JSON.stringify(m)); }catch(_){} }
+function custoLote(l){ return custosLote()[l&&l.id]||null; }
+// Monta o payload do lote (ingredientes = inóculo + meio; produto = beneficiado).
+function montarLotePlan(l){
+  var V=Number(l.volumeFab)||Number(l.volumeFinal)||0, ings=[];
+  if(l.inoculo){ var qi=qtdInsumo(insumoDe("inoculos",l.inoculo),V); if(qi&&qi.qtd>0) ings.push({ produto:l.inoculo, qtd:qi.qtd }); }
+  if(l.meio){ var qm=qtdInsumo(insumoDe("meios",l.meio),V); if(qm&&qm.qtd>0) ings.push({ produto:l.meio, qtd:qm.qtd }); }
   var volB=Number(l.volumeFinal||l.volumeFab)||0;
-  if(l.produto && volB>0) movs.push({ id:"biofab-"+l.id+"-prod", tipo:"ENTRADA", produto:l.produto, qtd:volB, data:nowDate(), origem:lote, local:planLocal() });
-  if(!movs.length) return;
-  var avisos=[], seq=Promise.resolve();
-  movs.forEach(function(m){ seq=seq.then(function(){ return enviarMovPlan(m).catch(function(err){ if(err&&err.planErro) avisos.push(m.produto+": "+(err.message||"recusado")); }); }); });
-  seq.then(function(){ sincronizarPlan(); if(avisos.length) toast("Planejamento: "+avisos.join(" · "),"err"); else toast("Estoque do Planejamento atualizado."); });
+  return { id:(l.loteNum||l.id), data:(l.dtFim?String(l.dtFim).split("T")[0]:nowDate()), local:planLocal(),
+    produto:l.produto||"", volume:volB, ingredientes:ings, obs:(rotuloCompleto(l.fermentador)+(l.obs?(" · "+l.obs):"")) };
+}
+// Ao CONCLUIR (ou ao reenviar): envia o lote inteiro ao Planejamento e mostra o custo.
+function enviarLoteConclusao(l){
+  if(!planLigado() || ehAvulsa(l)) return;
+  var lote=montarLotePlan(l);
+  if(!lote.produto && !(lote.ingredientes&&lote.ingredientes.length)) return;
+  overlay(true);
+  enviarLotePlan(lote).then(function(d){
+    overlay(false); guardarCustoLote(l,d); sincronizarPlan();
+    toast("Planejamento: lote enviado"+(d&&d.custoUnit!=null?(" · R$ "+fmtNum(d.custoUnit)+"/un"):"")+".");
+    if(S.view==="lote"||S.view==="estoque") render();
+  }).catch(function(err){
+    overlay(false);
+    if(err && err.planErro) toast("Planejamento recusou: "+(err.message||"ingrediente sem preço"),"err");
+    else toast("Sem conexão — lote na fila do Planejamento, envia sozinho depois.","err");
+    if(S.view==="lote"||S.view==="estoque") render();
+  });
 }
 
 function ferStatusDeLote(status){ return (status==="Concluído"||status==="Reprovado") ? "Disponível" : status; }
@@ -1826,6 +1844,7 @@ function secLaudo(l){
         : '<p class="muted" style="margin:0 0 8px">Gera o laudo formatado e abre a impressão do navegador — escolha <b>Salvar como PDF</b> (funciona no celular).<br><span style="color:#8a5c00">Para salvar direto no Drive e anexar no WhatsApp, ligue a sincronização com a planilha (📊 Painel).</span></p>'
           +'<button class="btn green" id="btnImprimir">🖨️ Imprimir / Salvar PDF</button>')
     +'</div>'
+    +cardCustoPlan(l)
     +(ehAvulsa(l)
         ? (l.status==="Concluído"
             ? '<div class="card" style="border-left:5px solid #3d6b3d"><div class="sec-title">Análise concluída</div><p class="muted" style="margin:0">✅ Registrada no histórico de avulsas.</p></div>'
@@ -1833,6 +1852,26 @@ function secLaudo(l){
         : (l.status==="Concluído"
             ? '<div class="card" style="border-left:5px solid #3d6b3d"><div class="sec-title">Lote concluído</div><p class="muted" style="margin:0">✅ '+esc(rotuloUnidade(l.fermentador)+' '+nomeUnidade(l.fermentador))+' liberado (Disponível).</p></div>'
             : '<button class="btn green" id="btnConcluir">✅ Concluir lote (libera o fermentador)</button>'));
+}
+// Card de custo/estoque do lote (Planejamento). Reenviar lança baixa + beneficiado + custo.
+function cardCustoPlan(l){
+  if(ehAvulsa(l) || !planLigado()) return "";
+  var c=custoLote(l), un=medidaDe(l.fermentador);
+  var h='<div class="card" style="border-left:5px solid #2563eb"><div class="sec-title">Custo & estoque (Planejamento)</div>';
+  if(c){
+    h+='<div class="grid2" style="margin:0 0 8px">'
+      +'<div class="stat" style="border-top-color:#2563eb"><b style="font-size:18px">R$ '+fmtNum(c.custoUnit)+'</b><span>por '+esc(un)+'</span></div>'
+      +'<div class="stat"><b style="font-size:18px">R$ '+fmtNum(c.custoTotal)+'</b><span>custo total</span></div></div>';
+    if(c.composicao) h+='<div class="muted" style="font-size:12px">'+esc(typeof c.composicao==="string"?c.composicao:JSON.stringify(c.composicao))+'</div>';
+    if(c.ingredientes && c.ingredientes.length){
+      h+='<div class="muted" style="font-size:12px;margin:8px 0 4px">Ingredientes</div>';
+      c.ingredientes.forEach(function(it){ h+='<div class="row" style="border-bottom:1px solid #ede5d0;padding:4px 0;font-size:13px"><span>'+esc(it.produto||it.nome||"")+' <span class="muted">('+fmtNum(it.qtd)+' '+esc(it.un||"")+')</span></span><b>R$ '+fmtNum(it.valor!=null?it.valor:(it.custo||0))+'</b></div>'; });
+    }
+  } else {
+    h+='<p class="muted" style="margin:0 0 8px">Envie este lote ao Planejamento: dá baixa dos ingredientes, lança o beneficiado e calcula o custo.</p>';
+  }
+  h+='<button class="btn sec" id="btnReenviarPlan" style="margin-top:8px">↗ '+(c?"Reenviar":"Enviar")+' ao Planejamento</button></div>';
+  return h;
 }
 function montarLaudo(l){
   if(ehFungo(l)) return montarLaudoFungo(l);
@@ -2342,7 +2381,7 @@ function concluirLote(){
   }
   if(!confirm("Concluir este lote? "+rotuloUnidade(l.fermentador)+" "+nomeUnidade(l.fermentador)+" volta a ficar Disponível.")) return;
   l.status="Concluído"; if(!l.dtFim) l.dtFim=nowDT();
-  movimentarPlanConclusao(l); // baixa dos ingredientes + entrada do beneficiado no Planejamento
+  enviarLoteConclusao(l); // envia o lote ao Planejamento (baixa dos ingredientes + beneficiado + custo)
   persistLote(l,"Lote concluído. Fermentador liberado.");
 }
 function copiarLaudo(){
@@ -2609,7 +2648,7 @@ function aplicarProduto(nome){
 function bind(){
   var app=el("app");
   app.onclick=function(ev){
-    var t=ev.target.closest("[data-step],[data-recarregar],[data-usarlocal],[data-nav],[data-hist],[data-histf],[data-novo],[data-novavulsa],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],[data-planitem],[data-planconfig],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin,#btnPlanSalvar,#btnPlanSync");
+    var t=ev.target.closest("[data-step],[data-recarregar],[data-usarlocal],[data-nav],[data-hist],[data-histf],[data-novo],[data-novavulsa],[data-abrir],[data-abrirlaudo],[data-abrirvisita],[data-sec],[data-secnav],[data-cadaba],[data-delcat],[data-editcat],[data-delfunc],[data-editfunc],[data-deluser],[data-edituser],[data-delmed],[data-delajuste],[data-saidav],[data-delvisitag],[data-delacao],[data-delfoto],[data-planitem],[data-planconfig],#btnSalvarFicha,#btnFinalizar,#btnExcluir,#btnAddCat,#btnAddFunc,#btnAddUser,#btnCancelEdit,#btnAddMed,#btnAddAjuste,#btnSalvarObs,#btnSalvarRelatorio,#btnCopiar,#btnCompartilhar,#btnImprimir,#btnConcluir,#btnAddVisitaG,#btnAddAcao,#btnFoto,#btnFotoGaleria,#btnEnviarPdf,#btnCSV,#btnExport,#btnImport,#btnSalvarSync,#btnTestarSync,#btnMigrar,#btnDesligarSync,#btnRecarregarDiag,#btnLimparFila,#btnForcarUpd,#btnPrimeiroAcesso,#btnLogin,#btnPlanSalvar,#btnPlanSync,#btnReenviarPlan");
     if(!t) return;
     if(t.dataset.step){ passoLeitura(t.dataset.step); return; }
     if(t.dataset.recarregar!==undefined){ carregar(); return; }
@@ -2652,6 +2691,7 @@ function bind(){
     if(t.id==="btnCompartilhar"){ compartilharLaudo(); return; }
     if(t.id==="btnImprimir"){ imprimirLaudo(); return; }
     if(t.id==="btnConcluir"){ concluirLote(); return; }
+    if(t.id==="btnReenviarPlan"){ var lr=loteAtual(); if(lr) enviarLoteConclusao(lr); return; }
     if(t.id==="btnAddVisitaG"){ addVisitaGlobal(); return; }
     if(t.id==="btnAddAcao"){ addAcao(); return; }
     if(t.id==="btnFoto"){ selecionarFoto(); return; }
